@@ -1,0 +1,23 @@
+{
+  "name": "AI 好友 · 你的虚拟人设聊天室",
+  "short_name": "AI 好友",
+  "description": "本地优先的 AI 好友通讯录：给每个 AI 角色一套独立人设与独立聊天记录，支持流式对话、长期记忆、语音朗读与离线使用，数据只存在你自己的浏览器里。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#0f1115",
+  "theme_color": "#0f1115",
+  "categories": ["social", "entertainment", "productivity"],
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

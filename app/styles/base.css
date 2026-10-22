@@ -1,0 +1,682 @@
+/* ==========================================================================
+   AI 聊天网站 · 设计令牌与基础控件
+   ========================================================================== */
+
+:root {
+  /* 表单控件统一高度：所有 input/select 都落在这个高度上，
+     与 34px 的图标按钮、35px 的行内按钮属于同一档，混排时不会互相挤。 */
+  --ctrl-h: 35px;
+  --ctrl-h-inline: 26px; /* 嵌在 chips / 行内小容器里的输入框 */
+
+  /* 色板（深色默认） */
+  --bg: #0f1115;
+  --bg-soft: #13161c;
+  --panel: #171a21;
+  --panel-2: #1e222b;
+  --panel-3: #262b36;
+  --line: #2a2f3a;
+  --line-soft: #22262f;
+  --text: #e7e9ee;
+  --text-2: #c3c8d4;
+  --dim: #8b93a7;
+  --dim-2: #6a7284;
+  --accent: #6c8cff;
+  --accent-soft: rgba(108, 140, 255, 0.16);
+  --accent-text: #ffffff;
+  --ok: #4ec9a8;
+  --warn: #e0b341;
+  --danger: #ff6b6b;
+  /* 狼人杀专用强调色（亮橙）：这个按钮是"开一局游戏"，要跳出蓝（普通动作）与红（危险动作）
+     这两套语义色，所以单开一组令牌。用法与 .btn-danger 完全对称 ——
+     --werewolf 是**文字与边框**的颜色，--werewolf-text 是悬停填充后的文字色。
+     深色主题 #ff9500（色相 35°、饱和度 100%）在 --panel 上是 7.92:1，比原来的 #f0913a 更亮也更清楚。
+     浅色主题必须把橙压深一些（见 html[data-theme="light"]）：白底上亮橙当文字天然吃亏。 */
+  --werewolf: #ff9500;
+  --werewolf-text: #2a1a06;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.28);
+
+  /* 尺寸 */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-bub: 14px;
+  --sidebar-w: 288px;
+  --right-w: 340px;
+  --top-h: 60px;
+
+  /* 字体 */
+  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html[data-theme="light"] {
+  --bg: #f4f6fa;
+  --bg-soft: #eef1f7;
+  --panel: #ffffff;
+  --panel-2: #f2f4f9;
+  --panel-3: #e7eaf2;
+  --line: #dfe3ec;
+  --line-soft: #eaeef5;
+  --text: #1b1f2a;
+  --text-2: #3d4453;
+  --dim: #6b7288;
+  --dim-2: #8b91a3;
+  /* 描边风格的狼人杀键：橙是**文字色**，白底上越亮越不清楚（#ff9500 只有 2.05:1）。
+     这里取亮橙与可读性的折中 #e2761b（3.07:1，过 WCAG 对大字/图形控件的 3:1 线）；
+     悬停填充后配深字 #2a1a06 是 5.48:1，两套主题的悬停态因此都是"橙底深字"。 */
+  --werewolf: #e2761b;
+  --werewolf-text: #2a1a06;
+  --accent-soft: rgba(108, 140, 255, 0.13);
+  --shadow: 0 12px 40px rgba(24, 32, 60, 0.16);
+  --shadow-sm: 0 4px 16px rgba(24, 32, 60, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.65;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+}
+
+p {
+  margin: 0 0 8px;
+}
+
+a {
+  color: var(--accent);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--dim-2);
+  background-clip: content-box;
+}
+
+/* ---------- 按钮 ---------- */
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: var(--r-sm);
+  padding: 7px 13px;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.1s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* 键盘可达性焦点圈：只给"本来没有焦点样式"的控件。
+   表单控件（input/textarea/select）在下面有自己的 :focus 样式（强调色边框 + 3px 光晕），
+   再叠一层 2px outline 会变成"两条蓝线套在一起"——内圈贴着框、外圈离框 1px，
+   看起来就像蓝边跑到框里面去了，所以这里把它们排除掉。 */
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  color: #fff;
+}
+.btn-danger {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
+/* 狼人杀启动键：描边风格（透明底 + 橙字 + 橙边），与 .btn-danger 完全对称，
+   只是颜色换成橙 —— 右栏那排按钮里它靠"有颜色的字与边框"跳出来，而不是靠实心色块。 */
+.btn-werewolf {
+  background: transparent;
+  border-color: var(--werewolf);
+  color: var(--werewolf);
+  font-weight: 600;
+}
+.btn-werewolf:hover:not(:disabled) {
+  /* 悬停填成橙色：必须显式写回 border-color，否则会落到全局 button:hover 的 --accent，描出一圈蓝边 */
+  background: var(--werewolf);
+  border-color: var(--werewolf);
+  color: var(--werewolf-text);
+}
+.btn-ghost {
+  background: transparent;
+}
+.btn-sm {
+  padding: 4px 9px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+.btn-block {
+  width: 100%;
+}
+
+.icon-btn {
+  padding: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--dim);
+  flex: 0 0 auto;
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--panel-2);
+  color: var(--text);
+  border-color: var(--line);
+}
+.icon-btn.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+.icon-btn.sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+
+/* ---------- 表单 ---------- */
+input,
+textarea,
+select {
+  font: inherit;
+  /* 关键：表单控件必须是紧凑行高。若让它继承 body 的 1.65，每个输入框会被撑到 41px
+     （8+8 padding + 23 行高 + 2 边框），比旁边的按钮和图标都高一头，显得又大又挤。 */
+  line-height: 1.35;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  /* 用"高度 + 上下 padding 自动居中"而不是写死 padding，这样换字号也不会破坏对齐 */
+  box-sizing: border-box;
+  padding: 6px 10px;
+  height: var(--ctrl-h);
+  width: 100%;
+  outline: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+/* 多行文本按内容长高，不锁定高度 */
+textarea {
+  height: auto;
+  min-height: calc(var(--ctrl-h) + 12px);
+}
+/* 嵌在行内容器（如标签 chips 那一行）里的文本输入框：
+   与相邻 chip 同一档高度（26px，二者中心线对齐），不要撑成整行高 */
+.row > input[type="text"]:not(.input),
+.row.wrap > input[type="text"]:not(.input) {
+  height: var(--ctrl-h-inline);
+  padding: 0 4px;
+  flex: 1 1 140px;
+  min-width: 110px;
+  width: auto;
+}
+/* 按钮同样不要继承 1.65 的行高 */
+button {
+  line-height: 1.35;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+textarea {
+  resize: vertical;
+  line-height: 1.55;
+  padding: 8px 10px;
+  height: auto;
+}
+/* 数字输入框常用的"窄栏"：默认 100% 宽会把旁边的滑块挤短 */
+input[type="number"],
+input[size] {
+  width: auto;
+  min-width: 0;
+}
+input[type="number"] {
+  max-width: 120px;
+  height: var(--ctrl-h);
+}
+input[size="2"] { width: 3.6em; }
+input[size="3"] { width: 4.6em; }
+input[size="4"] { width: 5.6em; }
+input[size="6"] { width: 7.6em; }
+input[size="8"] { width: 9.6em; }
+
+select {
+  cursor: pointer;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--dim) 50%),
+    linear-gradient(135deg, var(--dim) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 51%, calc(100% - 11px) 51%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 30px;
+}
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  padding: 0;
+  height: 20px;
+  border: none;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--panel);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+input[type="color"] {
+  padding: 2px;
+  height: 34px;
+  cursor: pointer;
+}
+/* 勾选框 / 单选框：必须把通用表单控件的样式（height: --ctrl-h、padding、底色、圆角）全部退掉，
+   否则它们会被撑成一个 13×35 的浅色方块，看起来像个"坏掉的开关"。 */
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+label {
+  user-select: none;
+}
+
+.field {
+  margin-bottom: 14px;
+}
+.field-label {
+  display: block;
+  font-size: 12px;
+  color: var(--dim);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.field-hint {
+  font-size: 11px;
+  color: var(--dim-2);
+  margin-top: 5px;
+  line-height: 1.5;
+}
+.field-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.field-row > * {
+  min-width: 0;
+}
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0 12px;
+}
+
+/* ---------- 通用小组件 ---------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.chip.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.chip .x {
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 13px;
+  line-height: 1;
+}
+.chip .x:hover {
+  color: var(--danger);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+.badge.muted {
+  background: var(--dim-2);
+}
+
+.tag {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: var(--panel-3);
+  color: var(--dim);
+}
+
+.divider {
+  height: 1px;
+  background: var(--line);
+  margin: 14px 0;
+  border: 0;
+}
+
+.muted {
+  color: var(--dim);
+}
+.small {
+  font-size: 12px;
+}
+.tiny {
+  font-size: 11px;
+}
+.mono {
+  font-family: var(--mono);
+}
+.center {
+  text-align: center;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.spacer {
+  flex: 1;
+}
+.wrap {
+  flex-wrap: wrap;
+}
+.hidden {
+  display: none !important;
+}
+.scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.nowrap {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.clickable {
+  cursor: pointer;
+}
+
+/* 左对齐操作行（图标 + 标题 + 说明）
+   注意：全局 button 规则里有 justify-content:center，所以这里必须显式覆盖，
+   否则"图标+文字"会被整体挤到按钮中间（数据备份弹层曾经就踩了这个坑）。 */
+.action-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 11px 13px;
+  text-align: left;
+  white-space: normal;
+}
+.action-row .ic {
+  margin-top: 1px;
+}
+.action-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+.action-row-title {
+  font-weight: 600;
+  font-size: 13px;
+  text-align: left;
+}
+.action-row-desc {
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+/* 空状态 */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--dim);
+  /* 独占可用空间并在其中居中：作为弹性子项时自动撑满（会话区未选好友的占位就靠这条居中） */
+  flex: 1 1 auto;
+  min-height: 0;
+  box-sizing: border-box;
+}
+/* 放在弹层/面板里时不应该被拉伸 */
+.modal-body > .empty,
+.side-body > .empty {
+  flex: 0 0 auto;
+  padding: 32px 20px;
+}
+.empty .big {
+  font-size: 42px;
+  line-height: 1;
+  opacity: 0.9;
+}
+.empty h3 {
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+/* 加载动画 */
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.typing-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  height: 18px;
+}
+.typing-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  animation: bounce 1.25s infinite ease-in-out;
+}
+.typing-dots i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.typing-dots i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.pulse {
+  animation: pulse 1.1s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.flash-highlight {
+  animation: flash 1.4s ease;
+}
+@keyframes flash {
+  0%, 100% {
+    background: transparent;
+  }
+  20%, 60% {
+    background: var(--accent-soft);
+  }
+}
+
+/* 隐藏滚动条但保留滚动（横向 chips 等） */
+.no-bar::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+
+/* 无障碍 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

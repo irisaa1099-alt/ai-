@@ -1,0 +1,26 @@
+# 环境变量（含 API 密钥）绝不提交
+.env
+.env.*
+!.env.example
+
+# 构建/运行产物
+node_modules/
+dist/
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 本地备份
+*.backup.json
+aichat-backup-*.json
+
+# 测试产物
+tools/align-report.json
+tools/align-*.png
+tools/*-shot.png
+
+# 本地数据库（角色/聊天记录/设置含密钥，绝不提交）
+data/db/*
+!data/db/.gitkeep

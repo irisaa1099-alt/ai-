@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>AI 好友 · 你的虚拟人设聊天室</title>
+    <meta
+      name="description"
+      content="本地优先的 AI 好友通讯录：给每个 AI 角色一套独立人设、独立聊天记录，数据只存在你自己的浏览器里。"
+    />
+    <meta name="theme-color" content="#0f1115" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="AI 好友" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon.svg" />
+    <link rel="stylesheet" href="./styles/base.css" />
+    <link rel="stylesheet" href="./styles/app.css" />
+  </head>
+
+  <body>
+    <!-- 应用挂载点：三栏外壳由 ui/app.js 的 bootstrap() 构建 -->
+    <div id="app"></div>
+
+    <!-- 启动占位：bootstrap() 成功后会移除 -->
+    <div
+      id="boot"
+      style="
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: var(--bg, #0f1115);
+        color: var(--dim, #8b93a7);
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+        font-size: 13px;
+      "
+    >
+      <span class="spinner" style="width: 22px; height: 22px; border-width: 3px"></span>
+      <span>正在唤醒你的好友…</span>
+    </div>
+
+    <script type="module">
+      /* ------------------------------------------------------------------ *
+       * 启动脚本：把 app 之外的错误也变成用户看得懂的中文提示
+       * ------------------------------------------------------------------ */
+
+      /** 移除启动占位 */
+      function clearBoot() {
+        const boot = document.getElementById('boot');
+        if (boot) boot.remove();
+      }
+
+      /**
+       * 渲染一个可见的错误面板（全部用 textContent，绝不拼 innerHTML）
+       * @param {string} title 标题
+       * @param {string[]} lines 正文行
+       * @param {string} [detail] 原始错误信息
+       */
+      function showError(title, lines, detail) {
+        clearBoot();
+        const old = document.getElementById('boot-error');
+        if (old) old.remove();
+
+        const box = document.createElement('div');
+        box.id = 'boot-error';
+        box.setAttribute(
+          'style',
+          [
+            'position:fixed',
+            'inset:0',
+            'z-index:210',
+            'overflow:auto',
+            'padding:24px',
+            'background:var(--bg, #0f1115)',
+            'color:var(--text, #e7e9ee)',
+            'font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",system-ui,sans-serif',
+            'font-size:14px',
+            'line-height:1.75',
+          ].join(';')
+        );
+
+        const card = document.createElement('div');
+        card.setAttribute(
+          'style',
+          [
+            'max-width:640px',
+            'margin:8vh auto',
+            'background:var(--panel, #171a21)',
+            'border:1px solid var(--line, #2a2f3a)',
+            'border-radius:16px',
+            'padding:24px 26px',
+            'box-shadow:var(--shadow, 0 12px 40px rgba(0,0,0,.45))',
+          ].join(';')
+        );
+
+        const h = document.createElement('h2');
+        h.textContent = '⚠️ ' + title;
+        h.setAttribute('style', 'margin:0 0 12px;font-size:17px;color:var(--danger, #ff6b6b)');
+        card.appendChild(h);
+
+        for (const line of lines) {
+          const p = document.createElement('p');
+          p.textContent = line;
+          p.setAttribute('style', 'margin:0 0 10px;white-space:pre-wrap;color:var(--text-2, #c3c8d4)');
+          card.appendChild(p);
+        }
+
+        if (detail) {
+          const pre = document.createElement('pre');
+          pre.textContent = String(detail);
+          pre.setAttribute(
+            'style',
+            [
+              'margin:12px 0 0',
+              'padding:10px 12px',
+              'background:var(--panel-2, #1e222b)',
+              'border:1px solid var(--line, #2a2f3a)',
+              'border-radius:10px',
+              'white-space:pre-wrap',
+              'word-break:break-word',
+              'font-size:12px',
+              'color:var(--dim, #8b93a7)',
+            ].join(';')
+          );
+          card.appendChild(pre);
+        }
+
+        const tip = document.createElement('p');
+        tip.textContent =
+          '正确启动方式：在 app/ 目录下运行 node server.mjs，然后访问 http://127.0.0.1:5180\n' +
+          '请用 node server.mjs 启动，而不是直接双击打开文件。';
+        tip.setAttribute(
+          'style',
+          'margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line, #2a2f3a);white-space:pre-wrap;color:var(--dim, #8b93a7);font-size:12.5px'
+        );
+        card.appendChild(tip);
+
+        box.appendChild(card);
+        document.body.appendChild(box);
+      }
+
+      /* ---------- 1. file:// 协议直接给出明确提示 ---------- */
+      if (location.protocol === 'file:') {
+        showError(
+          '不能用这种方式打开',
+          [
+            '你正在以 file:// 协议直接打开这个 HTML 文件。',
+            '本应用使用原生 ES Module 与 IndexedDB，在 file:// 下会受限：模块脚本会被 CORS 策略拦截，IndexedDB 也可能不可用，页面无法正常工作。',
+          ],
+          'file:// 协议不受支持'
+        );
+      } else {
+        /* ---------- 2. 加载应用 ---------- */
+        const timer = setTimeout(() => {
+          const boot = document.getElementById('boot');
+          const app = document.getElementById('app');
+          if (boot && app && !app.firstChild) {
+            const msg = boot.lastElementChild;
+            if (msg) {
+              msg.textContent =
+                '启动有点慢…如果一直停在这里，请确认已用 node server.mjs 启动，并打开浏览器控制台查看具体报错。';
+            }
+          }
+        }, 12000);
+
+        import('./ui/app.js')
+          .then((m) => {
+            clearTimeout(timer);
+            if (!m || typeof m.bootstrap !== 'function') {
+              throw new Error('ui/app.js 没有导出 bootstrap()');
+            }
+            return m.bootstrap();
+          })
+          .then(() => {
+            clearBoot();
+          })
+          .catch((err) => {
+            clearTimeout(timer);
+            const message = err && err.message ? err.message : String(err);
+            const isModuleError = /import|module|specifier|MIME|Failed to fetch|404/i.test(message);
+            showError(
+              '应用启动失败',
+              [
+                isModuleError
+                  ? '有一个模块没有加载成功。请确认所有源码文件都完整存在于 app/ 目录下，并且是通过 http:// 访问的。'
+                  : '启动过程中出现了错误，详细信息见下方。',
+                '如果你还没启动本地服务器：在 app/ 目录下运行 node server.mjs，然后访问 http://127.0.0.1:5180',
+              ],
+              message
+            );
+          });
+      }
+    </script>
+  </body>
+</html>
