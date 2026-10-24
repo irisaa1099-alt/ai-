@@ -25,6 +25,7 @@
 import { estimateTokens, num, clamp, sleep, truncate, safeCostWith, shuffle } from './util.js';
 import { buildSystemPrompt, matchLore, summarizeIfNeeded } from './prompt.js';
 import { formatRecentExperiences, visibleGroupHistory, RECENT_LIMIT } from './recent.js';
+import { filterMemoryContext } from './memory.js';
 import { getRuntime, detectEmotion } from './runtime.js';
 import { abortController, addUsage, chatStream, estimateCost, PROVIDERS } from './llm.js';
 import {
@@ -511,6 +512,11 @@ export function buildGroupMessages(opts = {}) {
   const ctxCfg = settings.context || {};
   const userName = opts.userName || (settings.user && settings.user.name) || '我';
   const memory = opts.memory || { summary: '', facts: [] };
+  // 先过滤原文再做世界书、话题检索及精简；任何预算分支都不能恢复失效来源。
+  opts = { ...opts,
+    history: filterMemoryContext(opts.history, memory, { charId: speaker.id, source: `group:${group.id}` }),
+    recentExperiences: filterMemoryContext(opts.recentExperiences, memory, { charId: speaker.id, recent: true }),
+  };
   const runtime = opts.runtime || {};
   const budget = Math.max(0, Math.floor(num(opts.budgetTokens, num(ctxCfg.budgetTokens, 8000))));
 

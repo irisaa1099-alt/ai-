@@ -10,8 +10,8 @@
  *      关闭弹层时强制 flush 并广播 settings:changed。
  *   3. 主题与强调色改完立即生效（写 documentElement 的 data-theme 与 --accent/--accent-soft）。
  *   4. 绝不把用户输入拼进 innerHTML —— 一律走 el() 的 text / textContent。
- *   5. 密钥只保存在本机浏览器（localStorage），本文件不向任何第三方发送密钥，
- *      仅在用户点击「测试连接 / 获取模型列表」时按当前配置直连其自选的供应商。
+ *   5. 直连密钥保存在浏览器，并随设置同步至本机数据目录；请求时发送给所选供应商。
+ *      代理模式从服务器环境变量读取密钥。
  * ---------------------------------------------------------------------------
  */
 
@@ -473,7 +473,7 @@ function renderModel(content) {
   const keyInput = el('input.mono', {
     type: 'password',
     value: realKey ? PASSWORD : '',
-    placeholder: meta.needKey === false ? '（该模型通常无需密钥）' : 'sk-…',
+    placeholder: meta.needKey === false ? '（该模型通常无需密钥）' : '粘贴该供应商的原始 API Key',
     disabled: s.useProxy,
     on: {
       focus: () => {
@@ -516,7 +516,7 @@ function renderModel(content) {
       renderModel(content);
       if (on) void checkHealth();
     },
-    '打开后请求发往本机 /api/llm，由 server.mjs 从环境变量或 app/.env 注入密钥，浏览器不再持有密钥。'
+    '打开后请求发往本机 /api/llm，由 server.mjs 从环境变量或 app/.env 注入密钥；之前填写的直连密钥仍保留，但不用于代理请求。'
   );
 
   // 代理口令（对应 server.mjs 的 AICHAT_PROXY_TOKEN；留空表示服务器未开启校验）
@@ -581,8 +581,8 @@ function renderModel(content) {
     section(
       '模型接入',
       s.useProxy
-        ? '当前模式：服务器代理 —— 密钥由 server.mjs 注入，浏览器不保存密钥。'
-        : '当前模式：浏览器直连 —— 密钥只保存在本机浏览器（localStorage），不会上传。',
+        ? '当前模式：服务器代理 —— 使用服务器配置的密钥。'
+        : '当前模式：浏览器直连 —— 使用本机保存的密钥，请求时发送给所选供应商。',
       field('供应商', providerSel, `${meta.note || ''}${meta.needKey === false ? '（无需密钥）' : ''}`),
       field(
         '模型',
@@ -591,7 +591,7 @@ function renderModel(content) {
       ),
       field('接口地址（baseUrl）', baseInput, `留空则使用默认：${meta.baseUrl || '（自定义供应商必须填写）'}`),
       field('', el('div.row', fetchBtn), null),
-      field('API Key', el('div.key-row', keyInput, eyeBtn), `密钥只保存在本机浏览器（localStorage），不会上传；如需更高安全性，请开启服务器代理并把密钥写进 .env。${meta.keyUrl ? `申请地址：${meta.keyUrl}` : ''}`),
+      field('API Key', el('div.key-row', keyInput, eyeBtn), `粘贴原始密钥，不要添加 Bearer、引号或换行；不限前缀和长度。直连密钥保存在浏览器并同步到本机数据目录，请求时仅发送至当前配置的接口。代理模式请在 .env 配置对应供应商的密钥。${meta.keyUrl ? `申请地址：${meta.keyUrl}` : ''}`),
       proxyRow,
       proxyTokenRow,
       el('div.divider'),

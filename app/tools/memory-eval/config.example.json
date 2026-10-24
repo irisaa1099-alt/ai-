@@ -1,0 +1,7 @@
+{
+  "provider": "deepseek",
+  "model": "填写与网站一致的模型名",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "apiKeyEnv": "MEMORY_EVAL_API_KEY",
+  "params": { "temperature": 0, "topP": 1, "maxTokens": 256, "thinking": false }
+}

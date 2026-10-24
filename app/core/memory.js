@@ -70,6 +70,38 @@ export function blockedMemorySource(memory, source) {
     sourceKey(s) === sourceKey(source) && s.signature === source.signature));
 }
 
+/**
+ * 纠正/撤回同时约束原文入口，避免失效事实从近期经历或当前历史绕回提示词。
+ * 只过滤记录过的同一来源、同一版本；不改原消息，不猜测其他语义相似消息。
+ */
+export function filterMemoryContext(items, memory, { charId, source = 'private', recent = false } = {}) {
+  const list = Array.isArray(items) ? items : [];
+  const blocked = new Map();
+  for (const record of normalizeMemory(memory).factRecords) {
+    if (!record.blocked) continue;
+    for (const ref of record.sources) {
+      const key = sourceKey(ref);
+      if (!blocked.has(key)) blocked.set(key, new Set());
+      blocked.get(key).add(ref.signature);
+    }
+  }
+  if (!blocked.size) return list;
+  const result = [];
+  for (const item of list) {
+    if (!item) continue;
+    // Recent experiences retain the complete selected message content and original id.
+    const itemSource = recent ? String(item.source || '') : source;
+    const raw = recent ? { id: item.id, role: 'user', content: item.content } : item;
+    const ref = makeMemorySource(raw, charId, itemSource);
+    if (blocked.get(sourceKey(ref))?.has(ref.signature)) continue;
+    // Quote bodies are stored as truncated snapshots, so their full signature is unavailable.
+    // Drop only a blocked quote snapshot, retaining the new message itself.
+    const quoteRef = item.quoted?.id ? { ...ref, messageId: item.quoted.id } : null;
+    result.push(quoteRef && blocked.has(sourceKey(quoteRef)) ? { ...item, quoted: null } : item);
+  }
+  return result;
+}
+
 export function correctFact(memory, id, replacement) {
   const m = normalizeMemory(memory);
   const record = m.factRecords.find((r) => r.id === id);

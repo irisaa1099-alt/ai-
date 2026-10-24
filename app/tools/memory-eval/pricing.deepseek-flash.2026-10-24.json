@@ -1,0 +1,13 @@
+{
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "inputPerMillion": 0.15,
+  "cachedInputPerMillion": 0.003,
+  "outputPerMillion": 0.6,
+  "currency": "USD",
+  "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+  "checkedAt": "2026-10-24",
+  "period": "off-peak",
+  "validRunDateUTC": "2026-10-24",
+  "notes": "Official page: weekends are off-peak in full. Model version shown by docs: DeepSeek-V4.1-Flash-1017. This dated reference is only for runs on 2026-10-24, not a permanent default."
+}

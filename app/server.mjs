@@ -122,19 +122,20 @@ const PROVIDER_ENV = {
 function keyFor(provider, slot) {
   const p = String(provider || 'default');
   if (slot && slot !== 'default') {
-    const v = process.env[`${PROVIDER_ENV[slot] || slot.toUpperCase()}_API_KEY`] || process.env[`AICHAT_KEY_${slot.toUpperCase()}`];
+    const v = (process.env[`${PROVIDER_ENV[slot] || slot.toUpperCase()}_API_KEY`] || '').trim()
+      || (process.env[`AICHAT_KEY_${slot.toUpperCase()}`] || '').trim();
     if (v) return v;
   }
-  const direct = process.env[`${PROVIDER_ENV[p] || p.toUpperCase()}_API_KEY`];
+  const direct = (process.env[`${PROVIDER_ENV[p] || p.toUpperCase()}_API_KEY`] || '').trim();
   if (direct) return direct;
   const multi = process.env.AICHAT_API_KEYS;
   if (multi) {
     for (const pair of multi.split(',')) {
       const [k, ...rest] = pair.split(':');
-      if (k && k.trim() === p) return rest.join(':').trim();
+      if (k && k.trim() === p && rest.join(':').trim()) return rest.join(':').trim();
     }
   }
-  return process.env.AICHAT_API_KEY || '';
+  return (process.env.AICHAT_API_KEY || '').trim();
 }
 
 const PROXY_TOKEN = process.env.AICHAT_PROXY_TOKEN || '';
@@ -388,7 +389,8 @@ function buildUpstream(provider, model, messages, params, key, baseUrlOverride, 
     }
     if (provider === 'openrouter') {
       headers['HTTP-Referer'] = 'http://localhost';
-      headers['X-Title'] = 'AI 聊天网站';
+      // HTTP 请求头值不能含中文，否则 Node fetch 在发出请求前就会拒绝。
+      headers['X-Title'] = 'AI Chat';
     }
   } else if (kind === 'anthropic') {
     if (!base) throw new Error('未配置 anthropic 接口地址');
