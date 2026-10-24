@@ -8,7 +8,7 @@ import { affinityTone, affinityLabel, gapDescription, getRuntime } from './runti
 import { chat as llmChat } from './llm.js';
 import { getMemory, saveMemory, getMemoryHistory, resolveMemorySource } from './store.js';
 import { formatRecentExperiences, experienceContent } from './recent.js';
-import { normalizeMemory, selectMemoryFacts, memorySummary, makeMemorySource, sourceKey, blockedMemorySource, mergeExtractedMemory } from './memory.js';
+import { normalizeMemory, selectMemoryFacts, memorySummary, makeMemorySource, sourceKey, blockedMemorySource, mergeExtractedMemory, filterMemoryContext } from './memory.js';
 
 /**
  * 装配系统提示词
@@ -153,7 +153,7 @@ export function buildMessages(char, history, opts = {}) {
   let system = buildSystemPrompt(char, { settings, memory: mem, runtime, timeCtx, queryText: opts.userText || history?.at(-1)?.content || '' });
   let sysTokens = estimateTokens(system);
 
-  const list = Array.isArray(history) ? history.filter((m) => m && m.status !== 'error') : [];
+  const list = filterMemoryContext(history, mem, { charId: char?.id }).filter((m) => m && m.status !== 'error');
 
   // 世界书：用最近几条对话 + 本轮用户输入去匹配关键词，命中才注入
   const recentText = list
@@ -170,7 +170,8 @@ export function buildMessages(char, history, opts = {}) {
   const contentFor = (m) => m.quoted?.content
     ? `（引用对方的话：${truncate(m.quoted.content, 120)}）\n${messageContent(m)}` : messageContent(m);
   const limit = Math.max(1, budget - 64);
-  const recentContext = formatRecentExperiences(opts.recentExperiences, {
+  const recentExperiences = filterMemoryContext(opts.recentExperiences, mem, { charId: char?.id, recent: true });
+  const recentContext = formatRecentExperiences(recentExperiences, {
     charId: char?.id, budgetTokens: Math.min(1200, Math.floor(limit * 0.2)),
   });
   const recentTokens = estimateTokens(recentContext);

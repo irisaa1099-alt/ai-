@@ -17,7 +17,8 @@ node server.mjs
 
 - [完整功能与使用说明](app/README.md)
 - [项目架构](app/docs/ARCHITECTURE.md)
-- [最新修改记录](app/docs/BUGFIX-2026-10-22.md)
+- [最新修改记录](app/docs/BUGFIX-2026-10-24.md)
+- [记忆效果评测：固定场景、基线与消融](app/tools/memory-eval/README.md)
 - [交付说明](AI聊天网站-交付说明.md)
 
 源码位于 `app/`，检查工具位于 `app/tools/`，早期语音原型位于 `demo/`。

@@ -231,7 +231,7 @@ export const PROVIDERS_META = {
     needKey: true,
     keyName: 'API Key',
     docs: 'https://platform.openai.com/docs/api-reference/chat',
-    note: '手动填写兼容 OpenAI 协议的接口根地址（需以 /v1 结尾）与模型名。'
+    note: '填写厂商提供的 OpenAI Chat Completions 兼容接口根地址与模型名；请求会自动追加 /chat/completions，请勿填写完整聊天接口路径。'
   }
 };
 

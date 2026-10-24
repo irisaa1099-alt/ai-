@@ -20,6 +20,7 @@ aichat-backup-*.json
 tools/align-report.json
 tools/align-*.png
 tools/*-shot.png
+tools/memory-eval/*.local.json
 
 # 本地数据库（角色/聊天记录/设置含密钥，绝不提交）
 data/db/*
