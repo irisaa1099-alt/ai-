@@ -25,6 +25,7 @@
 import { applyChanges, validateBackup } from './core/sync.js';
 import { mergeEntity } from './core/entity-sync.js';
 import http from 'node:http';
+import os from 'node:os';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -251,7 +252,7 @@ function normalizeUrlPath(urlPath) {
  */
 function isProtectedPath(rel) {
   if (!rel || rel === '.') return false;
-  const segs = rel.split('/').filter(Boolean);
+  const segs = rel.toLowerCase().split('/').filter(Boolean);
   if (!segs.length) return false;
   // 本地数据库目录（settings.json 里有 API Key）—— 但 data/models.js 是应用模块，只能精确挡 data/db
   if (segs[0] === 'data' && segs[1] === 'db') return true;
@@ -282,7 +283,7 @@ async function serveStatic(req, res, urlPath) {
     return;
   }
   // 自定义 --data-dir 时同样保护真实数据库目录
-  if (target === DATA_DIR || target.startsWith(DATA_DIR + path.sep)) {
+  if (target.toLowerCase() === DATA_DIR.toLowerCase() || target.toLowerCase().startsWith(DATA_DIR.toLowerCase() + path.sep)) {
     res.writeHead(403).end('403 Forbidden');
     return;
   }
@@ -299,7 +300,14 @@ async function serveStatic(req, res, urlPath) {
     }
   }
   try {
-    const data = await fsp.readFile(filePath);
+    const real = await fsp.realpath(filePath);
+    const realRoot = await fsp.realpath(ROOT);
+    const realData = await fsp.realpath(DATA_DIR).catch(() => DATA_DIR);
+    if (!real.startsWith(realRoot + path.sep) || isProtectedPath(path.relative(realRoot, real).split(path.sep).join('/')) ||
+        real.toLowerCase() === realData.toLowerCase() || real.toLowerCase().startsWith(realData.toLowerCase() + path.sep)) {
+      res.writeHead(403).end('403 Forbidden'); return;
+    }
+    const data = await fsp.readFile(real);
     const ext = path.extname(filePath).toLowerCase();
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
@@ -1366,7 +1374,7 @@ async function replaceDbBody(body, res) {
   await safetySnapshot('before-replace', true);
 
   const staging = await fsp.mkdtemp(path.join(DATA_DIR, '.replace-'));
-  const kinds = ['characters', 'messages', 'memory', 'groups', 'groupmsgs'];
+  const kinds = ['characters', 'messages', 'memory', 'groups', 'groupmsgs', ...(body.deleted ? ['deleted'] : [])];
   const stagedDirs = Object.fromEntries(kinds.map((kind) => [kind, path.join(staging, kind)]));
   try {
     for (const dir of Object.values(stagedDirs)) await ensureDir(dir);
@@ -1406,6 +1414,9 @@ async function replaceDbBody(body, res) {
     for (const mem of mems) {
       if (!mem || !mem.charId) continue;
       await writeAtomicUnlocked(path.join(stagedDirs.memory, `${safeId(mem.charId)}.json`), JSON.stringify(mem, null, 1));
+    }
+    for (const kind of ['deleted']) for (const row of body[kind] || []) {
+      await writeAtomicUnlocked(path.join(stagedDirs[kind], `${row.kind === 'group' ? 'g-' : ''}${safeId(row.id)}.json`), JSON.stringify(row));
     }
     if (body.settings) await writeAtomicUnlocked(path.join(staging, 'settings.json'), JSON.stringify(body.settings, null, 1));
     if (body.runtime) await writeAtomicUnlocked(path.join(staging, 'runtime.json'), JSON.stringify(body.runtime, null, 1));
@@ -1513,21 +1524,26 @@ async function handleDbEntity(req, res, kind, id, rest) {
  * @param {import('node:http').IncomingMessage} req
  * @returns {boolean}
  */
+function isTrustedHost(req) {
+  try {
+    const host = new URL(`http://${req.headers.host || ''}`);
+    const allowed = new Set(['localhost', '127.0.0.1', '[::1]']);
+    for (const rows of Object.values(os.networkInterfaces())) for (const row of rows || []) {
+      allowed.add(row.address.includes(':') ? `[${row.address}]` : row.address);
+    }
+    if (!['0.0.0.0', '::'].includes(HOST)) allowed.add(HOST);
+    return !host.username && !host.password && host.pathname === '/' &&
+      allowed.has(host.hostname.toLowerCase()) && Number(host.port || 80) === Number(req.socket.localPort);
+  } catch { return false; }
+}
 function isTrustedOrigin(req) {
+  if (!isTrustedHost(req)) return false;
   const origin = req.headers.origin;
-  if (!origin) return true; // 非浏览器客户端（是否放行见 guardRemote）
+  if (!origin) return req.headers['sec-fetch-site'] !== 'cross-site';
   try {
     const url = new URL(origin);
-    // 同源（Origin 的 host 与请求的 Host 完全一致）→ 放行。
-    // 这一条同时覆盖"局域网 IP 访问"：以前拿 Origin 去比 HOST 配置值（--host 0.0.0.0），
-    // 用 192.168.x.x 打开页面时永远对不上，于是手机端所有接口都 403（P2 的根因）。
-    const host = String(req.headers.host || '');
-    if (host && url.host === host) return true;
-    // 本机来源（换端口调试 / 本地工具页）继续放行
-    return url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '::1';
-  } catch {
-    return false;
-  }
+    return ['http:', 'https:'].includes(url.protocol) && url.host === req.headers.host && url.origin === origin;
+  } catch { return false; }
 }
 
 /** 请求是否来自本机（回环地址） */
@@ -1652,6 +1668,7 @@ function guardApi(req, res, url) {
 const server = http.createServer(async (req, res) => {
   const url = req.url || '/';
   try {
+    if (!isTrustedHost(req)) return json(res, 403, { error: { message: '请求 Host 不属于本地服务地址' } });
     // 局域网浏览器带着正确口令打开页面 → 种 Cookie（非本机接口请求的授权凭据）
     maybeSetTokenCookie(req, res, url);
     if (req.method === 'OPTIONS') {
@@ -1824,61 +1841,12 @@ if (restoreArg) {
   const file = path.isAbsolute(restoreArg) ? restoreArg : path.join(process.cwd(), restoreArg);
   try {
     const pack = JSON.parse(await fsp.readFile(file, 'utf8'));
-    if (!pack || !Array.isArray(pack.characters)) throw new Error('不是有效的快照文件');
-    await safetySnapshot('before-restore');
-    for (const kind of ['characters', 'messages', 'memory', 'groups', 'groupmsgs']) {
-      await fsp.rm(DB_DIRS[kind], { recursive: true, force: true });
-    }
-    await ensureDataDirs();
-    for (const c of pack.characters) {
-      await writeAtomic(path.join(DB_DIRS.characters, `${safeId(c.id)}.json`), JSON.stringify(c, null, 1));
-    }
-    const byChar = new Map();
-    for (const m of pack.messages || []) {
-      const id = String(m.charId || '');
-      if (!id) continue;
-      if (!byChar.has(id)) byChar.set(id, []);
-      byChar.get(id).push(m);
-    }
-    for (const [charId, list] of byChar) {
-      await writeAtomic(
-        path.join(DB_DIRS.messages, `${safeId(charId)}.ndjson`),
-        list.map((m) => JSON.stringify(m)).join('\n') + '\n'
-      );
-    }
-    for (const mem of pack.memory || []) {
-      if (mem && mem.charId) await writeAtomic(path.join(DB_DIRS.memory, `${safeId(mem.charId)}.json`), JSON.stringify(mem, null, 1));
-    }
-    for (const g of pack.groups || []) {
-      if (g && g.id) await writeAtomic(path.join(DB_DIRS.groups, `${safeId(g.id)}.json`), JSON.stringify(g, null, 1));
-    }
-    // 群聊记录：**必须**一起恢复。之前这里漏了，导致"恢复快照"反而把群消息清空
-    const byGroup = new Map();
-    for (const m of pack.groupMessages || []) {
-      const id = String(m.groupId || '');
-      if (!id) continue;
-      if (!byGroup.has(id)) byGroup.set(id, []);
-      byGroup.get(id).push(m);
-    }
-    for (const [groupId, list] of byGroup) {
-      await writeAtomic(
-        path.join(DB_DIRS.groupmsgs, `${safeId(groupId)}.ndjson`),
-        list.map((m) => JSON.stringify(m)).join('\n') + '\n'
-      );
-    }
-    // 删除墓碑：按快照重写，避免"快照里已删的角色"又被本地墓碑忽略/或反之
-    await fsp.rm(DB_DIRS.deleted, { recursive: true, force: true });
-    await ensureDataDirs();
-    for (const t of pack.deleted || []) {
-      if (t && t.id) await writeAtomic(path.join(DB_DIRS.deleted, `${safeId(t.id)}.json`), JSON.stringify(t, null, 1));
-    }
-    // 设置与运行时状态（含好感度 / 未读）
-    if (pack.settings && typeof pack.settings === 'object') {
-      await writeAtomic(path.join(DATA_DIR, 'settings.json'), JSON.stringify(pack.settings, null, 1));
-    }
-    if (pack.runtime && typeof pack.runtime === 'object') {
-      await writeAtomic(path.join(DATA_DIR, 'runtime.json'), JSON.stringify(pack.runtime, null, 1));
-    }
+    validateBackup(pack);
+    // Reuse the fully staged, rollback-capable replacement used by HTTP import.
+    const response = { writeHead(code) { this.code = code; return this; }, end(body) {
+      if (this.code >= 400) throw new Error(JSON.parse(body).error.message);
+    } };
+    await withFsLock(() => replaceDbBody({ ...pack, force: true, deleted: pack.deleted || [] }, response));
     console.log(
       `  ♻️  已从快照恢复：${path.basename(file)}（${pack.characters.length} 角色 / ${(pack.messages || []).length} 消息 / ` +
         `${(pack.groups || []).length} 群 / ${(pack.groupMessages || []).length} 群消息` +

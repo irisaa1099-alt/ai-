@@ -20,6 +20,8 @@ let timer = null;
 let bootTimer = null;
 let ctxRef = null;
 let running = false;
+let generation = 0;
+const controllers = new Set();
 
 /**
  * 启动定时检查（每 60 秒）
@@ -45,6 +47,9 @@ export function initProactive(ctx) {
 
 /** 停止定时器 */
 export function stopProactive() {
+  generation++;
+  for (const controller of controllers) controller.abort();
+  controllers.clear();
   if (timer) clearInterval(timer);
   timer = null;
   if (bootTimer) clearTimeout(bootTimer);
@@ -57,9 +62,11 @@ async function checkAll() {
   const settings = ctxRef.settings;
   if (!settings || settings.proactive?.enabled !== true) return;
   running = true;
+  const epoch = generation;
   try {
     const chars = await listCharacters();
     for (const char of chars) {
+      if (epoch !== generation || ctxRef.settings?.proactive?.enabled !== true) break;
       if (char.muted) continue;
       const rt = getRuntime(char.id);
       // 当前正在聊天的角色不打扰
@@ -104,7 +111,10 @@ export function nextEligibleAt(char, rt, settings) {
  * @param {object} ctx
  * @returns {Promise<boolean>}
  */
-export async function maybeTrigger(char, ctx) {
+export async function maybeTrigger(char, ctx, { manual = false } = {}) {
+  const epoch = generation;
+  const valid = () => epoch === generation && (manual || ctx?.settings?.proactive?.enabled === true);
+  if (!valid()) return false;
   if (!char?.id) return false;
   const settings = (ctx && ctx.settings) || {};
   const rt = getRuntime(char.id);
@@ -115,6 +125,7 @@ export async function maybeTrigger(char, ctx) {
   const history = await listMessages(char.id);
   const memory = await getMemory(char.id);
   const recentExperiences = await getRecentExperiences(char.id);
+  if (!valid()) return false;
   const timeCtx = timeContext();
 
   const reason = rt.lastChatAt
@@ -133,8 +144,10 @@ export async function maybeTrigger(char, ctx) {
   });
   const withNudge = [...messages, { role: 'user', content: nudge }];
 
+  const controller = new AbortController();
+  controllers.add(controller);
   try {
-    const controller = new AbortController();
+    if (!valid()) return false;
     const res = await chatStream(
       {
         provider: char.model?.provider || settings.provider,
@@ -156,7 +169,7 @@ export async function maybeTrigger(char, ctx) {
       {}
     );
     const text = String(res.text || '').trim();
-    if (!text) return false;
+    if (!text || !valid() || controller.signal.aborted || res.aborted) return false;
 
     await appendMessage({
       charId: char.id,
@@ -166,7 +179,8 @@ export async function maybeTrigger(char, ctx) {
       usage: res.usage || null,
       emotion: 'neutral',
       status: 'done',
-    });
+    }, { signal: controller.signal });
+    if (!valid()) return false;
     void listMessages(char.id).then((rows) => summarizeIfNeeded(char, rows, { settings })).catch((err) => console.warn('[memory]', err));
     addUnread(char.id, 1);
     noteProactive(char.id);
@@ -197,8 +211,10 @@ export async function maybeTrigger(char, ctx) {
     }
     return true;
   } catch (err) {
-    console.warn('[proactive] 生成失败', err?.message || err);
+    if (!controller.signal.aborted) console.warn('[proactive] 生成失败', err?.message || err);
     return false;
+  } finally {
+    controllers.delete(controller);
   }
 }
 
@@ -206,7 +222,7 @@ export async function maybeTrigger(char, ctx) {
 export async function triggerNow(charId, ctx) {
   const char = await getCharacter(charId);
   if (!char) return false;
-  return maybeTrigger(char, ctx || ctxRef || { settings: {} });
+  return maybeTrigger(char, ctx || ctxRef || { settings: {} }, { manual: true });
 }
 
 export { pick };

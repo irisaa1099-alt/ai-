@@ -1,3 +1,4 @@
+import { syncNow } from '../core/filestore.js';
 /**
  * ui/settings.js —— 设置面板（契约 3.14）
  * ---------------------------------------------------------------------------
@@ -1713,8 +1714,8 @@ async function renderData(content) {
         {
           on: {
             click: async () => {
-              const r = await syncOnBoot();
-              if (r.ok) window.location.reload();
+              const r = await syncNow();
+              if (r.ok) toast('待同步修改已保存到文件', 'ok');
               else toast(`同步失败：${r.error || '未检测到本地文件服务（请用 node server.mjs 启动）'}`, 'error', 5200);
               await renderData(content);
             },

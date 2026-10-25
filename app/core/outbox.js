@@ -42,7 +42,7 @@ function serialized(run) {
 
 export function drain(send) {
   return serialized(async () => {
-    if (localStorage.getItem(UNSAFE)) throw new Error('有修改未能保存到同步队列，已保留浏览器数据；请先手动同步');
+    if (localStorage.getItem(UNSAFE)) throw new Error('有修改未能保存到同步队列，已保留浏览器数据；请先导出浏览器备份，再通过导入备份恢复；立即同步不会覆盖未入队的数据');
     for (const row of await transaction('readonly', (s) => s.getAll())) {
       try { await send(row.path, row.body, row.method); }
       catch (err) { err.operation = row; throw err; }

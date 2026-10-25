@@ -40,7 +40,7 @@ for (const s of cases) {
     assert.ok(text(row(s.id, 'no_source_check')).includes(s.value)); assertions += 2;
   }
   if (s.category === 'long_context') {
-    assert.equal(raw.includes(s.value), !s.personaRepeats); assertions++;
+    assert.equal(raw.includes(s.value), true, '关键记忆须在长人设裁剪后保留'); assertions++;
   }
 }
 assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'isolation.json'))).unchanged, true); assertions++;

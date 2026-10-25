@@ -132,7 +132,11 @@ try {
     await s.putGroupLocal({id:'g_pages',name:'分页测试群',members:['c_base'],everyoneSpeaks:false,maxAutoTurns:1});
     await s.putGroupMessagesLocal(Array.from({length:235},(_,i)=>({id:'gp_'+String(i).padStart(3,'0'),groupId:'g_pages',at:now+i,
       role:i%2?'assistant':'user',speakerId:i%2?'c_base':'user',speakerName:i%2?'c_base':'我',content:'群聊历史'+i,audienceIds:['c_base']})));
-    const synced=await(await import('./core/filestore.js')).syncNow();if(!synced.ok)throw Error('测试记录未能持久化');`);
+    const f=await import('./core/filestore.js');
+    await f.mirrorMessages('c_base',await s.listMessages('c_base'));
+    await f.mirrorGroup(await s.getGroup('g_pages'));
+    await f.mirrorGroupMessages('g_pages',await s.listGroupMessages('g_pages'));
+    const synced=await f.syncNow();if(!synced.ok)throw Error('测试记录未能持久化');`);
   await check('侧栏摘要无全表正文读取，末条、数量和兼容接口一致', async () => {
     const result = await evaluate(`const original=IDBObjectStore.prototype.getAll;let scans=0;
       IDBObjectStore.prototype.getAll=function(...args){if(['messages','groupMessages'].includes(this.name))scans++;return original.apply(this,args)};

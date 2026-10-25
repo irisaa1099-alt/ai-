@@ -41,7 +41,7 @@ export function applyChanges(base, changes) {
 export function validateBackup(pack) {
   if (!object(pack) || !Array.isArray(pack.characters)) throw new Error('备份缺少有效的角色列表');
   const fields = { characters: ['id'], messages: ['id', 'charId'], memory: ['charId'],
-    groups: ['id'], groupMessages: ['id', 'groupId'] };
+    groups: ['id'], groupMessages: ['id', 'groupId'], deleted: ['id'] };
   for (const [field, required] of Object.entries(fields)) {
     if (pack[field] === undefined && field !== 'characters') continue;
     if (!Array.isArray(pack[field])) throw new Error(`备份 ${field} 必须是数组`);
@@ -50,7 +50,7 @@ export function validateBackup(pack) {
       if (!object(row) || required.some((key) => typeof row[key] !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(row[key]))) {
         throw new Error(`备份 ${field} 含有无效记录`);
       }
-      const id = row.id || row.charId;
+      const id = (field === 'deleted' ? `${row.kind || 'character'}:` : '') + (row.id || row.charId);
       if (seen.has(id)) throw new Error(`备份 ${field} 含有重复 ID`);
       seen.add(id);
     }

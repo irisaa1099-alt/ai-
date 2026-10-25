@@ -668,47 +668,25 @@ export async function syncOnBoot() {
   }
 }
 
-/** 手动整库同步（设置面板里的"立即同步到文件"） */
+/** Flush durable changes in order; never overwrite newer disk data with an old browser snapshot. */
 export async function syncNow() {
   const ok = await available(true);
   if (!ok) return { ok: false, action: 'off' };
   try {
-    const store = await import('./store.js');
-    const chars = await store.listCharacters();
-    const payload = {
-      characters: chars,
-      messages: [],
-      memory: [],
-      groups: [],
-      groupMessages: [],
-      settings: store.getSettings(),
-      runtime: store.readRuntimeAll(),
-    };
-    for (const c of chars) {
-      payload.messages.push(...(await store.listMessages(c.id)));
-      const mem = await store.getMemory(c.id);
-      if (mem && (mem.summary || mem.facts?.length || mem.factRecords?.length)) payload.memory.push({ charId: c.id, ...mem });
-    }
-    for (const g of await store.listGroups()) {
-      payload.groups.push(g);
-      payload.groupMessages.push(...(await store.listGroupMessages(g.id)));
-    }
-    await apiPost('/replace', payload);
-    await clearOutbox();
+    setStatus('syncing');
+    // Mirror writes journal before sending; drain shares the lock with every window.
+    let checkpoint;
+    do {
+      checkpoint = pendingJournal;
+      await checkpoint;
+      await drain(apiPost);
+    } while (checkpoint !== pendingJournal);
     state.lastSync = Date.now();
     setStatus('ok');
-    return {
-      ok: true,
-      action: 'replace',
-      chars: chars.length,
-      messages: payload.messages.length,
-      groups: payload.groups.length,
-      groupMessages: payload.groupMessages.length,
-      dir: state.dir,
-    };
+    return { ok: true, action: 'flush', dir: state.dir };
   } catch (err) {
-    setStatus('error', (err && err.message) || String(err));
-    return { ok: false, action: 'error', error: (err && err.message) || String(err) };
+    setStatus('error', err.message || String(err), err);
+    return { ok: false, action: 'error', error: err.message || String(err) };
   }
 }
 

@@ -1789,21 +1789,14 @@ async function generateReply(opts) {
   } catch (err) {
     if (stream === st) handleStreamError(st, err, { mode, target, charId });
   } finally {
-    // 分两段：气泡清理只在"这一轮还是我"时做；**忙状态复位无条件做**。
-    // 原因：`stopStream()` 会先把 activeGeneration / stream 置空，
-    // 如果用户恰好在 finalizeStream 的 await 期间点了停止，这个 finally 就会
-    // 因为 activeGeneration !== st 而整段跳过 —— busy 永远停在 true，
-    // 发送键一直是"停止"、点它也没反应，只能刷新页面。
-    if (activeGeneration === st && stream === st) {
-      cancelTyping(st);
-      removeStreamNode(st);
-      stream = null;
-    }
-    if (activeGeneration === st) activeGeneration = null;
-    // 无条件复位：走到这里说明"我发起的这次 generateReply"结束了（正常收尾 / 报错 / 被停止
-    // 都算）。busy 没有"归属者"信息，只能靠"这一轮结束了就放开"兜底；新请求的忙状态由它
-    // 自己的 finally 负责，不会被这里漏掉。
-    if (busy) {
+    // stopStream releases its own state immediately; only this generation may finish it.
+    if (activeGeneration === st) {
+      if (stream === st) {
+        cancelTyping(st);
+        removeStreamNode(st);
+        stream = null;
+      }
+      activeGeneration = null;
       busy = false;
       updateSendBtn();
     }

@@ -625,10 +625,11 @@ export async function listConversationStats() {
 }
 
 /** 追加一条消息 */
-export async function appendMessage(msg) {
+export async function appendMessage(msg, { signal } = {}) {
   const m = normalizeMessage(msg);
   if (!m.charId) throw new Error('appendMessage 缺少 charId');
-  await idb('messages', 'readwrite', (s) => s.put(m));
+  signal?.throwIfAborted();
+  await idb('messages', 'readwrite', (s) => { signal?.throwIfAborted(); return s.put(m); });
   void mirrorMessages(m.charId, m);
   bus.emit('msg:appended', m);
   return m;

@@ -110,7 +110,7 @@ export function buildSystemPrompt(char, ctx = {}) {
   if (char?.authorNote) lines.push(`【作者备注（仅你可见，不要直接引用）】${char.authorNote}`);
   if (char?.systemPrompt) lines.push(`【角色专属设定（优先级高于以上通用准则）】\n${char.systemPrompt}`);
 
-  return lines.join('\n\n');
+  return ctx.parts ? lines : lines.join('\n\n');
 }
 
 /**
@@ -150,8 +150,9 @@ export function buildMessages(char, history, opts = {}) {
   const budget = num(opts.budgetTokens, num(ctxCfg.budgetTokens, 8000));
   const maxMessages = num(ctxCfg.maxMessages, 40);
 
-  let system = buildSystemPrompt(char, { settings, memory: mem, runtime, timeCtx, queryText: opts.userText || history?.at(-1)?.content || '' });
-  let sysTokens = estimateTokens(system);
+  const queryText = opts.userText || history?.at(-1)?.content || '';
+  const parts = buildSystemPrompt(char, { settings, memory: {}, runtime, timeCtx, queryText, parts: true });
+  let system = '', sysTokens = 0, includedMemory = '';
 
   const list = filterMemoryContext(history, mem, { charId: char?.id }).filter((m) => m && m.status !== 'error');
 
@@ -177,7 +178,30 @@ export function buildMessages(char, history, opts = {}) {
   const recentTokens = estimateTokens(recentContext);
   // Reserve room for the current message, then account for every optional component.
   const lastCost = pool.length ? Math.min(estimateTokens(contentFor(pool.at(-1))), Math.floor(limit / 2)) : 0;
-  system = fitText(system, Math.max(1, limit - lastCost - recentTokens));
+  // Reserve rules and relevant memory before optional persona prose, using actual sent text.
+  const systemLimit = Math.max(1, limit - lastCost - recentTokens - 16);
+  const ruleParts = parts.filter((p) => /^【(行为准则|禁区|角色专属设定)/.test(p));
+  const personaParts = parts.slice(1).filter((p) => !ruleParts.includes(p));
+  const identity = fitText(parts[0], Math.min(100, Math.floor(systemLimit * 0.15)));
+  const ruleLimit = Math.min(900, Math.floor(systemLimit * 0.35));
+  const rules = ruleParts.map((p) => fitText(p, Math.max(0, Math.floor(ruleLimit / Math.max(1, ruleParts.length)) - 4))).filter(Boolean).join('\n\n');
+  const memoryLimit = Math.min(1800, Math.floor(systemLimit * 0.45));
+  const memoryParts = [];
+  for (const fact of selectMemoryFacts(mem, queryText)) {
+    const line = `· ${fact}`;
+    const candidate = ['【关于对方你还记得（用户纠正优先于旧聊天表述）】', ...memoryParts, line].join('\n');
+    if (estimateTokens(candidate) <= memoryLimit) memoryParts.push(line);
+  }
+  if (memoryParts.length) includedMemory = ['【关于对方你还记得（用户纠正优先于旧聊天表述）】', ...memoryParts].join('\n');
+  const summary = memorySummary(mem);
+  if (summary) {
+    const remaining = memoryLimit - estimateTokens(includedMemory) - 4;
+    const text = fitText(`【你记得的事（长期记忆）】${summary}`, remaining);
+    if (text) includedMemory = [includedMemory, text].filter(Boolean).join('\n\n');
+  }
+  const protectedText = [identity, rules, includedMemory].filter(Boolean).join('\n\n');
+  const persona = fitText(personaParts.join('\n\n'), Math.max(0, systemLimit - estimateTokens(protectedText) - 4));
+  system = [protectedText, persona].filter(Boolean).join('\n\n');
   sysTokens = estimateTokens(system);
   loreText = fitText(loreText, Math.max(0, limit - sysTokens - lastCost - recentTokens));
   loreTokens = estimateTokens(loreText);
@@ -219,20 +243,9 @@ export function buildMessages(char, history, opts = {}) {
   const histTokens = kept.reduce((n, m) => n + estimateTokens(m.promptContent), 0);
   const exTokens = examples.reduce((n, e) => n + estimateTokens(e.user) + estimateTokens(e.ai), 0);
 
-  // 记忆（摘要 + 事实）是**装进 system 提示词**里的（见 buildSystemPrompt 第 8 节），
-  // 也就是说它已经包含在 sysTokens 里了。明细里再单列一条"记忆摘要"时，必须把它从
-  // "角色人设与准则"里减掉 —— 否则同一份记忆被算了两遍，分项加起来大于 total，
-  // 用户在「设置 → 上下文预算」里看到的就是"分项数字对不上"。
-  // 这里按 buildSystemPrompt 的原样拼出记忆那一段（同样的前缀、同样的条数上限），
-  // 保证减掉的就是真正被计入 sysTokens 的那部分。
-  const memLines = [];
-  if (memorySummary(mem)) memLines.push(`【你记得的事（长期记忆）】${memorySummary(mem)}`);
-  const memFacts = selectMemoryFacts(mem, opts.userText || history?.at(-1)?.content || '');
-  if (memFacts.length) {
-    memLines.push(`【关于对方你还记得（用户纠正优先于旧聊天表述）】${memFacts.map((f) => `· ${f}`).join('\n')}`);
-  }
-  const memoryTokens = Math.min(sysTokens, estimateTokens(memLines.join('\n\n')));
-  const personaTokens = Math.max(0, sysTokens - memoryTokens);
+  const memoryTokens = estimateTokens(includedMemory);
+  const actualTotal = merged.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+  const personaTokens = Math.max(0, actualTotal - memoryTokens - loreTokens - recentTokens - histTokens - exTokens);
 
   const meta = {
     breakdown: [
@@ -243,7 +256,8 @@ export function buildMessages(char, history, opts = {}) {
       { label: '其他聊天的近期经历', tokens: recentTokens, kind: 'recent' },
       { label: '最近对话', tokens: histTokens, kind: 'history' },
     ],
-    total: sysTokens + loreTokens + exTokens + histTokens + recentTokens,
+    total: actualTotal,
+    trimmed: estimateTokens(parts.join('\n\n')) > sysTokens - memoryTokens,
     loreHits: loreRaw.map((e) => e.keys.join('/')),
     budget,
     kept: kept.length,
