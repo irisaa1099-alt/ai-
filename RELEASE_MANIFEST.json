@@ -1,0 +1,370 @@
+{
+  "release": "quliao-aic-20261025",
+  "gitBase": "c6deb4555ffcc165eb6c4c99677ac8ff5d11cf83",
+  "workingTreeChanges": "",
+  "coreUnmodifiedByPackaging": true,
+  "templateReplacement": "app/data/contest-templates.js -> app/data/templates.js",
+  "sourceSha256": "7c2465622a4b5d94d08468a9820944587c9f844be27931eb665c36b658ad81c5",
+  "files": [
+    {
+      "path": "app/.env.example",
+      "source": "app/.env.example",
+      "sha256": "c5b169c5d12df516cc6abdcff23e564d2e32a6e22d51f54e37acb792e75c0d80"
+    },
+    {
+      "path": "app/core/bus.js",
+      "source": "app/core/bus.js",
+      "sha256": "fe46d7dfc3db41a1fb70484ea660aaa2293e59fd473688c41eb193695ea09812"
+    },
+    {
+      "path": "app/core/entity-sync.js",
+      "source": "app/core/entity-sync.js",
+      "sha256": "db15770c4eb9541d3d9087570aeea64357435d6449f3528381fb822bc53de321"
+    },
+    {
+      "path": "app/core/filestore.js",
+      "source": "app/core/filestore.js",
+      "sha256": "87eeed7761bd4b4a37f871fa059aa8375d65563a34ad38ffff85c59b73f9fbf1"
+    },
+    {
+      "path": "app/core/group.js",
+      "source": "app/core/group.js",
+      "sha256": "e83e2f1cd68180dc6b356b11b63ff0c0f01e2560ff4d8792f2326d56ce5dc5a9"
+    },
+    {
+      "path": "app/core/llm.js",
+      "source": "app/core/llm.js",
+      "sha256": "97ebf04a3607cb24a632b184662438674b8bdecdacca9922d9ce7643f657bb3a"
+    },
+    {
+      "path": "app/core/memory.js",
+      "source": "app/core/memory.js",
+      "sha256": "e9fc5c7ef4adfe9594e2050a7a274c9f0790ff373593639fc32321c25d003e79"
+    },
+    {
+      "path": "app/core/outbox.js",
+      "source": "app/core/outbox.js",
+      "sha256": "d9f99003c6d7112e4f18ae06f9cbe385d541bbc06152b58d2ab325fbaa8456a8"
+    },
+    {
+      "path": "app/core/proactive.js",
+      "source": "app/core/proactive.js",
+      "sha256": "e1e1df5ef4c18a0cb25c65d94a5668d744de58875d3588c2db2424375a12ca46"
+    },
+    {
+      "path": "app/core/prompt.js",
+      "source": "app/core/prompt.js",
+      "sha256": "824122830319c5b148cd5648ab6b1aa9bb1694cb751558445f094448164eaf4a"
+    },
+    {
+      "path": "app/core/recent.js",
+      "source": "app/core/recent.js",
+      "sha256": "404466d0c96c57e2668b4bc0dbfb76c7ab6fd892a7ef5ca8f92709fdd427afdf"
+    },
+    {
+      "path": "app/core/runtime.js",
+      "source": "app/core/runtime.js",
+      "sha256": "b79198b2683e7d25fa0f6b5561867a5c10cf0a90308624aeb99442f52c8cd1e3"
+    },
+    {
+      "path": "app/core/store.js",
+      "source": "app/core/store.js",
+      "sha256": "fb29ccf37b33ee729a14d0036d3017355a4803c5c213b0e82a654a2e7084654b"
+    },
+    {
+      "path": "app/core/sync.js",
+      "source": "app/core/sync.js",
+      "sha256": "fa6c70265b03408d9ac50f397a740adfb9a9aa17b915463290c44e05024030a5"
+    },
+    {
+      "path": "app/core/util.js",
+      "source": "app/core/util.js",
+      "sha256": "a55628cc0778a290c8a4475c30954e4fe331e3d7e22694a205ff8a52c7e07adf"
+    },
+    {
+      "path": "app/core/werewolf.js",
+      "source": "app/core/werewolf.js",
+      "sha256": "2fb0d968bbb47a4996301fb49e1edeb2ab0c913c616544a82f7465944d41c3f2"
+    },
+    {
+      "path": "app/data/models.js",
+      "source": "app/data/models.js",
+      "sha256": "54f69d56f9112c8c801cc8a3988444df3bc1fa199317ef42b3ad192e31c2d2fd"
+    },
+    {
+      "path": "app/data/templates.js",
+      "source": "app/data/contest-templates.js",
+      "sha256": "7bc7a54d737e719e18ed141a6047777aca5d19a63e0446e4871c2333b54c908f"
+    },
+    {
+      "path": "app/docs/BUGFIX-2026-10-24.md",
+      "source": "app/docs/BUGFIX-2026-10-24.md",
+      "sha256": "3c96f24d5d7cf8bdb58dd6b184b1ecde7afdf1675ba12bed7dcedc3f684a43f9"
+    },
+    {
+      "path": "app/docs/BUGFIX-2026-10-25.md",
+      "source": "app/docs/BUGFIX-2026-10-25.md",
+      "sha256": "adf33fdedac35db62cac7c611644bef64fc5737eeab2e0d1b21fcffe2f8125ca"
+    },
+    {
+      "path": "app/docs/CONTEST-REPRODUCE.md",
+      "source": "app/docs/CONTEST-REPRODUCE.md",
+      "sha256": "271b3e134b8abce04060d2f789098bae4bafbc6f9bd63d256fb5193355c5ddf7"
+    },
+    {
+      "path": "app/docs/MEMORY-PROVENANCE.md",
+      "source": "app/docs/MEMORY-PROVENANCE.md",
+      "sha256": "084a175e738ce09a0c60db1c94eed8ac4b228a4e1f249de9042f2bf31debdece"
+    },
+    {
+      "path": "app/docs/RECENT-EXPERIENCES.md",
+      "source": "app/docs/RECENT-EXPERIENCES.md",
+      "sha256": "af8bb70dc5c9524303646ccc76510a9e8e859a1ac762b760f98959a5ba28a07d"
+    },
+    {
+      "path": "app/icon.svg",
+      "source": "app/icon.svg",
+      "sha256": "0c8a4bfb8641e2ea68e0c8ae75b076c707edb05ffd6272d4fecdf63c6dcae488"
+    },
+    {
+      "path": "app/index.html",
+      "source": "app/index.html",
+      "sha256": "458cc41dc38b9113b76eab822cb7883eeb1daf1571136cab63603a520c9aa45c"
+    },
+    {
+      "path": "app/licenses/LUCIDE-LICENSE.txt",
+      "source": "app/licenses/LUCIDE-LICENSE.txt",
+      "sha256": "1e7290b35280a048667bbf0ebabac1c7fd52a75300e8b2946ac165715997f2bc"
+    },
+    {
+      "path": "app/licenses/lucide-sources.json",
+      "source": "app/licenses/lucide-sources.json",
+      "sha256": "b8d1dfc36086966c58e21c0638145b406db190ed523ef719651310da3f2adc4b"
+    },
+    {
+      "path": "app/manifest.webmanifest",
+      "source": "app/manifest.webmanifest",
+      "sha256": "e8af9b5ad82a13eed1ce9cd513114c084448adba65b76c1bfe9d5356714fd85c"
+    },
+    {
+      "path": "app/README.md",
+      "source": "app/docs/CONTEST-REPRODUCE.md",
+      "sha256": "271b3e134b8abce04060d2f789098bae4bafbc6f9bd63d256fb5193355c5ddf7"
+    },
+    {
+      "path": "app/server.mjs",
+      "source": "app/server.mjs",
+      "sha256": "f168754257aa94d210da58bccfe8cc4fd990d956b7207a2862f8d046f9a17118"
+    },
+    {
+      "path": "app/styles/app.css",
+      "source": "app/styles/app.css",
+      "sha256": "4f24b6c152445e2314db06adeb8a948e296152e0a8b51f2a2d0da9ab154d2835"
+    },
+    {
+      "path": "app/styles/base.css",
+      "source": "app/styles/base.css",
+      "sha256": "9f50077f698886e211f2d674f5037738a7c1e3eaa8851aa92781c818517f7ab7"
+    },
+    {
+      "path": "app/sw.js",
+      "source": "app/sw.js",
+      "sha256": "64b6d6584de95dd09b750af1cef74cbec421600133c7a3e1cfb9ce138a70ebd0"
+    },
+    {
+      "path": "app/tools/cdp.mjs",
+      "source": "app/tools/cdp.mjs",
+      "sha256": "c89160c5a54f35ad9ecd068c0f83940578600d2e46e3e3674ca98ba100b0ead0"
+    },
+    {
+      "path": "app/tools/contestcheck.mjs",
+      "source": "app/tools/contestcheck.mjs",
+      "sha256": "db46ee7cfc8eff84710215fdf7fb0c3f889c70f649808f0e88a4f6757f60cb07"
+    },
+    {
+      "path": "app/tools/groupbudgetcheck.mjs",
+      "source": "app/tools/groupbudgetcheck.mjs",
+      "sha256": "419beec914ca13e1cbd6d1331d70fe11043bf8c4de6d7403733af8db1b5a0da8"
+    },
+    {
+      "path": "app/tools/memory-eval.mjs",
+      "source": "app/tools/memory-eval.mjs",
+      "sha256": "c18a1acd07a721f8d84f68532c664b68f90315bb7d309839c188d0d3b444bb3c"
+    },
+    {
+      "path": "app/tools/memory-eval/browser.mjs",
+      "source": "app/tools/memory-eval/browser.mjs",
+      "sha256": "17cfc0686e987c927b235b7cadb7cd4f067601d89fdc543b065007f8e6a4a2c9"
+    },
+    {
+      "path": "app/tools/memory-eval/check-run.mjs",
+      "source": "app/tools/memory-eval/check-run.mjs",
+      "sha256": "13e23af7758fc09fc4c7e9748ea980bd674f09eee9c7e63c8547a6bce28c44f4"
+    },
+    {
+      "path": "app/tools/memory-eval/check.test.mjs",
+      "source": "app/tools/memory-eval/check.test.mjs",
+      "sha256": "5a470c4094661c995f0b02334773743d0d4edce8269d2118952d02a6b320c946"
+    },
+    {
+      "path": "app/tools/memory-eval/config.example.json",
+      "source": "app/tools/memory-eval/config.example.json",
+      "sha256": "08444c4f822b38ea60f729c32ccb92687de78a2d7e05813c21ce06fadbe2ea0c"
+    },
+    {
+      "path": "app/tools/memory-eval/correction.test.mjs",
+      "source": "app/tools/memory-eval/correction.test.mjs",
+      "sha256": "0c0255b3fe345bea6d03687d025a0f20ee55dc188e9209cae35651b1b57c9754"
+    },
+    {
+      "path": "app/tools/memory-eval/pricing.deepseek-flash.2026-10-24.json",
+      "source": "app/tools/memory-eval/pricing.deepseek-flash.2026-10-24.json",
+      "sha256": "d86dda0ff0d39fd21e6a4d5b3cff81e577cdcbeb6ee9626f4f3c4dee1b722c65"
+    },
+    {
+      "path": "app/tools/memory-eval/README.md",
+      "source": "app/tools/memory-eval/README.md",
+      "sha256": "634081edbedc372d47804cf62104e126981f13d0875fb4f6e22b4c9d3f3f738f"
+    },
+    {
+      "path": "app/tools/memory-eval/report.mjs",
+      "source": "app/tools/memory-eval/report.mjs",
+      "sha256": "cf9e4d44a4bdc71eefed5b420dc325fb26a387ffbce31901e95f4af1b83c7f5c"
+    },
+    {
+      "path": "app/tools/memory-eval/reprice.mjs",
+      "source": "app/tools/memory-eval/reprice.mjs",
+      "sha256": "d9c754f97e0e7d3dbe584039b31a4d16a45172354fadde9b801ed7aad5571427"
+    },
+    {
+      "path": "app/tools/memory-eval/scenarios.mjs",
+      "source": "app/tools/memory-eval/scenarios.mjs",
+      "sha256": "0af0a8bebfea26661ed039e410c8472edc1b64d3b5d8cb60c6716c6bf85e9cdf"
+    },
+    {
+      "path": "app/tools/memorycheck.mjs",
+      "source": "app/tools/memorycheck.mjs",
+      "sha256": "043563706be78937cdf531772b32018fa37293ffb6b41e816de439ed22e51246"
+    },
+    {
+      "path": "app/tools/optimizationcheck.mjs",
+      "source": "app/tools/optimizationcheck.mjs",
+      "sha256": "619cb494d4f1f360a01d97d92fa33dd5fdaccd82cbc8a04cdd6409db1c724378"
+    },
+    {
+      "path": "app/tools/providercheck.mjs",
+      "source": "app/tools/providercheck.mjs",
+      "sha256": "e538fd8f856a30d1b3b8c7480ff9d2e48ccba8e9095064dd61689b78f737c4a1"
+    },
+    {
+      "path": "app/tools/recentcheck.mjs",
+      "source": "app/tools/recentcheck.mjs",
+      "sha256": "8e1949fd101f72f230537b8b8c66bbe8f0d2384c5221eb898b52db011b7e9859"
+    },
+    {
+      "path": "app/tools/securitycheck.mjs",
+      "source": "app/tools/securitycheck.mjs",
+      "sha256": "ca165934e3044734c2f2cd26422727e41673ba9574275073ee1d2f54b5b5e66e"
+    },
+    {
+      "path": "app/ui/app.js",
+      "source": "app/ui/app.js",
+      "sha256": "ca15b5efe007910e038bf9301830caccc2978537e5156c535468543ee05c60de"
+    },
+    {
+      "path": "app/ui/chat.js",
+      "source": "app/ui/chat.js",
+      "sha256": "96777e731ac8cbf74e81cedcae6d78cd707c3da3461a9908e9ff9898211eb75d"
+    },
+    {
+      "path": "app/ui/dom.js",
+      "source": "app/ui/dom.js",
+      "sha256": "54122733d9c72f50d81a3fa5ba2039b89dc599238f631f1c4edf64659bb11f69"
+    },
+    {
+      "path": "app/ui/editor.js",
+      "source": "app/ui/editor.js",
+      "sha256": "0b0d8a64c03ce48c82e01ded055b6d74c5f961b30dea315e5a793340e3e71a99"
+    },
+    {
+      "path": "app/ui/favorites.js",
+      "source": "app/ui/favorites.js",
+      "sha256": "110b4b06df2463c661d2efcd736f98cf0d81ba930158c0928c908278f7712e35"
+    },
+    {
+      "path": "app/ui/groupchat.js",
+      "source": "app/ui/groupchat.js",
+      "sha256": "4bca8b0b3585072c203fe6e59f25b7d270d775a4daa71386b69e0384dd78351c"
+    },
+    {
+      "path": "app/ui/groupeditor.js",
+      "source": "app/ui/groupeditor.js",
+      "sha256": "310c60c7307fcae887302daf28770cb592c3fd460f5183a35341e5fb7d01a53d"
+    },
+    {
+      "path": "app/ui/icons.js",
+      "source": "app/ui/icons.js",
+      "sha256": "d69aeb7ee2d378c7dd0fc50765fe1f07d3f801ad3bbb4dad291c06e0a0136c15"
+    },
+    {
+      "path": "app/ui/message-list.js",
+      "source": "app/ui/message-list.js",
+      "sha256": "b33ef69a4f45ece47501f090af43dd3f5eb28f63441824326da0a7d6a85f8f0c"
+    },
+    {
+      "path": "app/ui/settings.js",
+      "source": "app/ui/settings.js",
+      "sha256": "aa634550d4a1c40fcb01f1cb63ff9da4484ecaa7930771476c1aed1ce9f6b7fb"
+    },
+    {
+      "path": "app/ui/shared.js",
+      "source": "app/ui/shared.js",
+      "sha256": "93aedee79c15631515a27b97d301fbd7b7c87c67dc3b71da7cffe618c3d11e86"
+    },
+    {
+      "path": "app/ui/sidebar.js",
+      "source": "app/ui/sidebar.js",
+      "sha256": "d5f79ebd07b035f7797fa731992c2527fbe74376f1bab33701426467bd02dbc9"
+    },
+    {
+      "path": "app/ui/sync-conflicts.js",
+      "source": "app/ui/sync-conflicts.js",
+      "sha256": "b4a35f64d5e9ce022f097a89b5df08830c63b60a9287886b27bae39723a8dbd7"
+    },
+    {
+      "path": "app/ui/toast.js",
+      "source": "app/ui/toast.js",
+      "sha256": "d94c1c83274b811bb27926a7c2ad8b845f96285edace34ec4130d2b01ab349ea"
+    },
+    {
+      "path": "app/ui/werewolf.js",
+      "source": "app/ui/werewolf.js",
+      "sha256": "36d5b1a94cff529a9aba19ca0da92b8e38b7e8c89a5304a8e970caefeba098f4"
+    },
+    {
+      "path": "app/voice/splitter.js",
+      "source": "app/voice/splitter.js",
+      "sha256": "c077f5efcfe49782a87be14656957ff259041d1df9d81761f00af788969d0ddd"
+    },
+    {
+      "path": "app/voice/stt.js",
+      "source": "app/voice/stt.js",
+      "sha256": "2f597f5dddbdcc59a38b5f58222dd2ea6a1157a10ffc7e20fce324d4b33149e9"
+    },
+    {
+      "path": "app/voice/tts.js",
+      "source": "app/voice/tts.js",
+      "sha256": "5a22e30c546eac6220d6c9c08c39aee89227051ebf943a758dfce7640b182a23"
+    },
+    {
+      "path": "LICENSE",
+      "source": "LICENSE",
+      "sha256": "a658c26adf3fc1884485b3959c735ea51f4c2e4b74a07cf789d54a675c2db5fb"
+    },
+    {
+      "path": "NOTICE.md",
+      "source": "NOTICE.md",
+      "sha256": "eb5f0da54be247bdd075e041e3a13765a88eda448815bd4e2d15159cb15bbe19"
+    }
+  ]
+}
