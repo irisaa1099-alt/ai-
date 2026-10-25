@@ -14,8 +14,8 @@
  * ---------------------------------------------------------------------------
  */
 
-/** v61：更新私聊预算、来源保护、同步与取消任务以及来源明确的图标。 */
-const CACHE = 'aichat-v61';
+/** v62：更新私聊预算、来源保护、同步与取消任务以及来源明确的图标。 */
+const CACHE = 'aichat-v62';
 
 /** 预缓存的静态资源清单（路径与 app/ 目录下的真实文件一致） */
 const PRECACHE = [
@@ -39,6 +39,7 @@ const PRECACHE = [
   './core/prompt.js',
   './core/recent.js',
   './core/memory.js',
+  './core/memory-correction.js',
   './core/llm.js',
   './core/proactive.js',
   './core/filestore.js',

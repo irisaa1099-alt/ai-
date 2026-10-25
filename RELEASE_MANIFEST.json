@@ -1,10 +1,10 @@
 {
-  "release": "quliao-aic-20261025-r2",
-  "gitBase": "b2b689e2f38f91576be659777b645cbe2458b01f",
+  "release": "quliao-aic-20261025-r3",
+  "gitBase": "b948353d92d2633ef22b777e5b76a47611878195",
   "workingTreeChanges": "",
   "coreUnmodifiedByPackaging": true,
   "templateReplacement": "app/data/contest-templates.js -> app/data/templates.js",
-  "sourceSha256": "c8c311477b9416054de94fae875567e2be9fcf56bd3f06ef6f12827431a6db14",
+  "sourceSha256": "e8172503832703af59db9a0aa5eca80cdfeef56745176032ffc71e29c4759665",
   "files": [
     {
       "path": ".gitignore",
@@ -34,7 +34,7 @@
     {
       "path": "app/core/group.js",
       "source": "app/core/group.js",
-      "sha256": "ce313056af6ca23ca69dfb5db38bf58e750a366be95a008f2b6c4b2dcceca096"
+      "sha256": "5e26a766d40875d1793aee2837c8d748f6cd8ad0b99d6bb84fe308060b16b7d3"
     },
     {
       "path": "app/core/llm.js",
@@ -42,9 +42,14 @@
       "sha256": "97ebf04a3607cb24a632b184662438674b8bdecdacca9922d9ce7643f657bb3a"
     },
     {
+      "path": "app/core/memory-correction.js",
+      "source": "app/core/memory-correction.js",
+      "sha256": "d0d9225c174c29f3cb204fa539fecf75e1c2fc456f99b6a4e577bd00ac4fa0eb"
+    },
+    {
       "path": "app/core/memory.js",
       "source": "app/core/memory.js",
-      "sha256": "e9fc5c7ef4adfe9594e2050a7a274c9f0790ff373593639fc32321c25d003e79"
+      "sha256": "b19008528d858dd070aa37338564193c16ed85d4d55ab865381e97cadc09f914"
     },
     {
       "path": "app/core/outbox.js",
@@ -59,7 +64,7 @@
     {
       "path": "app/core/prompt.js",
       "source": "app/core/prompt.js",
-      "sha256": "cb59d325631ad2ec9a761c59b42e58a4106c3b4dbb354924a3f4b6189a4e146b"
+      "sha256": "f77b642addb29d211ca6d2c3728af1a466678a8d1c4d5a10c41562df3e603a2d"
     },
     {
       "path": "app/core/recent.js",
@@ -74,7 +79,7 @@
     {
       "path": "app/core/store.js",
       "source": "app/core/store.js",
-      "sha256": "7ad0d91b34eeec6178a01227571fb13fa4d2eebca786d8b9364881163d896632"
+      "sha256": "d1b640c816c34b52cd62875ac938f752c1f4d34705ed079617cb957cf8a85472"
     },
     {
       "path": "app/core/sync.js",
@@ -119,17 +124,22 @@
     {
       "path": "app/docs/CONTEST-REPRODUCE.md",
       "source": "app/docs/CONTEST-REPRODUCE.md",
-      "sha256": "1fa5b3a471f817a4ca9811602e5bccfe4f2cc335685a26e0525b48be8741b683"
+      "sha256": "741bb3a6f94ef7711d10f5fcb0e5164d4b23e4ac52adbbc61d7b56ded73bec6a"
     },
     {
       "path": "app/docs/CORE-EXPERIENCE-2026-10-25.md",
       "source": "app/docs/CORE-EXPERIENCE-2026-10-25.md",
-      "sha256": "15b55ae14679a187fdc066bf332f97e815dfae6a108ef6d199ca4d588cd9069e"
+      "sha256": "c6ccb4b9fd7631e09fbb60f71b0d71f8661b6cc0ff3eb95cdb26ba1ca4caed57"
     },
     {
       "path": "app/docs/MEMORY-PROVENANCE.md",
       "source": "app/docs/MEMORY-PROVENANCE.md",
       "sha256": "084a175e738ce09a0c60db1c94eed8ac4b228a4e1f249de9042f2bf31debdece"
+    },
+    {
+      "path": "app/docs/MEMORY-REVISION-2026-10-25.md",
+      "source": "app/docs/MEMORY-REVISION-2026-10-25.md",
+      "sha256": "1f124a9c1674e39e1a3d5541cf9917993d21cd82f1f94a0df8c1f6c9dfa5c5ab"
     },
     {
       "path": "app/docs/RECENT-EXPERIENCES.md",
@@ -174,7 +184,7 @@
     {
       "path": "app/README.md",
       "source": "app/docs/CONTEST-REPRODUCE.md",
-      "sha256": "1fa5b3a471f817a4ca9811602e5bccfe4f2cc335685a26e0525b48be8741b683"
+      "sha256": "741bb3a6f94ef7711d10f5fcb0e5164d4b23e4ac52adbbc61d7b56ded73bec6a"
     },
     {
       "path": "app/server.mjs",
@@ -194,7 +204,7 @@
     {
       "path": "app/sw.js",
       "source": "app/sw.js",
-      "sha256": "c32253ecb422f71cf7e511fff2704973573efeefe847a8032a96a43df8b7e7f1"
+      "sha256": "457b370a4706dd44a78b1bc38ce72e5803ebae7758e16b270bda75c11e8aa3b9"
     },
     {
       "path": "app/tools/cdp.mjs",
@@ -209,12 +219,12 @@
     {
       "path": "app/tools/core-eval.mjs",
       "source": "app/tools/core-eval.mjs",
-      "sha256": "c805ad2c6a4cc913b110b9619d65aed614ab070d241b0e05ad509c4653153b4a"
+      "sha256": "d28d5cad15544f7d613cc4960f6b7c74d30376b263043683133e5227f85f4a1e"
     },
     {
       "path": "app/tools/core-eval/browser.mjs",
       "source": "app/tools/core-eval/browser.mjs",
-      "sha256": "2c13a838497dea77a5cc8bf3d614b0fb577a5bc6f372cbf33c0039ec5539379f"
+      "sha256": "afbc3b295e9f29b0babdd23d88812fbb417089df8491561c24f0d52c53ff1114"
     },
     {
       "path": "app/tools/core-eval/check-run.mjs",
@@ -224,7 +234,12 @@
     {
       "path": "app/tools/core-eval/README.md",
       "source": "app/tools/core-eval/README.md",
-      "sha256": "ee514acfbe4b395c1dc9eb67df7807ac01bd11b0b62d4fbd69001935cc6d78c1"
+      "sha256": "9e8156a5dd638e51377a453af1e6e00dc920037cd63873f0dfa6b2a1927d37ad"
+    },
+    {
+      "path": "app/tools/core-eval/recover-review.mjs",
+      "source": "app/tools/core-eval/recover-review.mjs",
+      "sha256": "ba6e6fb210a0b2072211299edb7f9b0549cacb6a0668c5a851b9de864e6ea7a2"
     },
     {
       "path": "app/tools/core-eval/report.mjs",
@@ -234,7 +249,7 @@
     {
       "path": "app/tools/core-eval/scenarios.mjs",
       "source": "app/tools/core-eval/scenarios.mjs",
-      "sha256": "57672dfa6ded6fc3df6ca24ea8725852e122a73c64a2d05cc60d578d1bf0a819"
+      "sha256": "6a51622a1d7719d22ff620b311fa4221712e1d845ee7c2e21497c4522194d3b6"
     },
     {
       "path": "app/tools/core-eval/semantic-review.mjs",
@@ -312,9 +327,14 @@
       "sha256": "0af0a8bebfea26661ed039e410c8472edc1b64d3b5d8cb60c6716c6bf85e9cdf"
     },
     {
+      "path": "app/tools/memory-revision.test.mjs",
+      "source": "app/tools/memory-revision.test.mjs",
+      "sha256": "b4ff08a089e0cbeba6d2a4b4560feac2f2c27c6c3509709494cb0bb3d655fe00"
+    },
+    {
       "path": "app/tools/memorycheck.mjs",
       "source": "app/tools/memorycheck.mjs",
-      "sha256": "043563706be78937cdf531772b32018fa37293ffb6b41e816de439ed22e51246"
+      "sha256": "3c5d68d8d476ad786eb91c084965522b47795c0ae63f639634d4ec0362255e2a"
     },
     {
       "path": "app/tools/mock-llm.mjs",
@@ -394,7 +414,7 @@
     {
       "path": "app/ui/settings.js",
       "source": "app/ui/settings.js",
-      "sha256": "aa634550d4a1c40fcb01f1cb63ff9da4484ecaa7930771476c1aed1ce9f6b7fb"
+      "sha256": "53152caa63b8e40323144a5ec51ae135a8fd969050064f5bc433a0dd5f84bc0f"
     },
     {
       "path": "app/ui/shared.js",

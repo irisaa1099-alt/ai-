@@ -1254,9 +1254,9 @@ export async function getMemorySource(charId, recordId) {
   return record ? Promise.all(record.sources.map((s) => resolveMemorySource(charId, s))) : [];
 }
 
-export async function correctMemoryFact(charId, recordId, text) {
+export async function correctMemoryFact(charId, recordId, text, opts = {}) {
   if (!charId) throw new Error('缺少角色');
-  return updateMemoryAtomic(charId, (memory) => correctFact(memory, recordId, text));
+  return updateMemoryAtomic(charId, (memory) => correctFact(memory, recordId, text, opts), opts);
 }
 
 export async function retractMemoryFact(charId, recordId) {

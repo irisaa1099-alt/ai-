@@ -30,7 +30,6 @@ import {
   listMessages,
   getMemory,
   getMemorySource,
-  correctMemoryFact,
   retractMemoryFact,
   getRecentExperiences,
   saveMemory,
@@ -39,6 +38,7 @@ import {
 } from '../core/store.js';
 import { chat, listModels, getUsage, clearUsage, llmErrors } from '../core/llm.js';
 import { buildMessages, rebuildMemory } from '../core/prompt.js';
+import { correctRelatedMemoryFacts } from '../core/memory-correction.js';
 import { getRuntime } from '../core/runtime.js';
 import { PROVIDERS_META, CHAT_MODELS, DEFAULT_PRESETS, PARAM_HINTS, getProvider, THINKING_CHOICES, thinkingChoiceOf, thinkingParamOf } from '../data/models.js';
 import { speaker, voiceAvailable, clearVoiceCache, CLOUD_VOICE_PRESETS, CLOUD_TTS_MODELS } from '../voice/tts.js';
@@ -1540,12 +1540,14 @@ async function renderMemoryBox(box, char, onChanged) {
             on: { click: () => void mutate(async () => {
               const text = await promptDialog({
                 title: '纠正这条记忆',
-                label: '填写正确内容。保存后原条目进入历史，聊天原文不会改动。',
+                label: '填写正确内容。保存时会检查同一角色的同义记忆和最近可见对话，一并停用相关旧表述；聊天原文保留。',
                 value: record.text, multiline: true,
               });
               if (text == null) return false;
-              await correctMemoryFact(char.id, record.id, text);
-            }, '记忆已纠正') },
+              toast('正在核对同义记忆…', 'info');
+              const result = await correctRelatedMemoryFacts(char.id, record.id, text);
+              toast(`已纠正${result.correctedFacts}条相关记忆`, 'ok');
+            }) },
           }));
         }
         if (record.status === 'active') {
