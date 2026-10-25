@@ -265,7 +265,7 @@ try {
     // 群聊记录必须整段带进 system（「名字：内容」格式）
     assert(sys.includes('【群里最近的对话】'), '群聊提示词里没有群聊记录段');
     assert(sys.includes('【你现在在一个群聊里'), '群聊提示词里没有群聊规则段');
-    assert(/不要替他们说话|绝不能替他们说话/.test(sys), '缺少"不要替别人说话"的约束');
+    assert(/不要替他们说话|绝不能替他们(?:说话|生成新的台词)/.test(sys), '缺少"不要替别人说话"的约束');
     const nameA = await page.eval('window.__AICHAT__.ctx.groupMembers[0].name');
     assert(sys.includes(`${nameA}：`) || sys.includes('：'), `群聊记录没有「发言人：内容」格式：${sys.slice(-300)}`);
     // 最后一条 user 指令必须点明"轮到你（谁）"
