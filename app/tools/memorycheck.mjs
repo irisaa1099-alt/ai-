@@ -171,7 +171,8 @@ try {
       await page.eval(`[...document.querySelectorAll('.modal-foot button')].findLast(b=>b.textContent==='关闭').click()`);
     });
     await check('截图：人工纠正后新事实有效，旧事实保留在历史', async () => {
-      await page.eval(`document.querySelector('[data-memory-write="correct"]').click()`);
+      plans.push(()=>JSON.stringify({factIds:[],messageIds:[],retainedFacts:[]}));
+    await page.eval(`document.querySelector('[data-memory-write="correct"]').click()`);
       await wait(() => page.eval(`!!document.querySelector('.modal-body textarea')`));
       await page.eval(`(()=>{const input=document.querySelector('.modal-body textarea');input.value='用户现在更喜欢清晨散步。';input.dispatchEvent(new Event('input',{bubbles:true}));[...document.querySelectorAll('.modal-foot button')].findLast(b=>b.textContent==='确定').click()})()`);
       await wait(async () => facts(await memory(f.id)).includes('用户现在更喜欢清晨散步。'));
@@ -457,6 +458,7 @@ try {
     await page.eval(`document.querySelector('article[data-memory-status="active"] button[aria-label^="查看记忆来源"]').click()`);
     await wait(() => page.eval(`[...document.querySelectorAll('.memory-source-content')].some(n=>n.textContent.includes(${JSON.stringify(transfer.marker)}))`));
     await page.eval(`[...document.querySelectorAll('.modal-foot button')].findLast(b=>b.textContent==='关闭').click()`);
+    for(let i=0;i<2;i++)plans.push(()=>JSON.stringify({factIds:[],messageIds:[],retainedFacts:[]}));
     await page.eval(`document.querySelector('[data-memory-write="correct"]').click()`);
     await wait(() => page.eval(`!!document.querySelector('.modal-body textarea')`));
     await page.eval(`(()=>{const input=document.querySelector('.modal-body textarea');input.value='UI_CORRECTED_FACT';input.dispatchEvent(new Event('input',{bubbles:true}));[...document.querySelectorAll('.modal-foot button')].findLast(b=>b.textContent==='确定').click()})()`);
@@ -468,6 +470,20 @@ try {
     await page.eval(`[...document.querySelectorAll('.modal-foot button')].find(b=>b.textContent==='撤回记忆').click()`);
     await wait(async () => (await memory(transfer.id)).factRecords.some((r) => r.id === record.id && r.status === 'retracted'));
     assert.ok(!(await prompt(transfer.id)).includes('UI_CORRECTED_FACT'));
+  });
+  await check('同义分析延迟返回不覆盖期间的手工修改',async()=>{
+    const f=await seed('semantic_race');await evaluate(`await s.saveMemory('${f.id}',{facts:['旧安排']})`);
+    const before=await memory(f.id),rid=active(before)[0].id;let release;
+    plans.push(()=>new Promise(resolve=>{release=()=>resolve(JSON.stringify({factIds:[],messageIds:[],retainedFacts:[]}))}));
+    await evaluate(`window.__correction=(await import('./core/memory-correction.js')).correctRelatedMemoryFacts('${f.id}','${rid}','迟到的新安排').catch(e=>({error:e.code||e.message}));`);
+    await wait(()=>release);await evaluate(`await s.correctMemoryFact('${f.id}','${rid}','期间人工修改')`);release();
+    const result=await evaluate('return await window.__correction');assert.equal(result.error,'memory_conflict');assert.deepEqual(facts(await memory(f.id)),['期间人工修改']);
+  });
+  await check('同义分析返回伪造ID时不产生任何修改',async()=>{
+    const f=await seed('semantic_bad');await evaluate(`await s.saveMemory('${f.id}',{facts:['应保留的安排']})`);const before=await memory(f.id),rid=active(before)[0].id;
+    plans.push(()=>JSON.stringify({factIds:['foreign_fact'],messageIds:[],retainedFacts:[]}));
+    const result=await evaluate(`try{await(await import('./core/memory-correction.js')).correctRelatedMemoryFacts('${f.id}','${rid}','错误覆盖');return false}catch{return true}`);
+    assert(result);assert.deepEqual(await memory(f.id),before);
   });
   await check('明确清空记录不会遗留事实或撤回记录', async () => {
     await evaluate(`await s.saveMemory(${JSON.stringify(transfer.id)},{summary:'',facts:[],factRecords:[],summarySources:[],summarizedUpTo:0});`);

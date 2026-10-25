@@ -65,7 +65,7 @@ if (args.includes('--help') || !args.some((x) => ['--live', '--dry-run', '--list
     + '  node tools/core-eval.mjs --live --pilot --from-site\n'
     + '  node tools/core-eval.mjs --live --full --config tools/core-eval/config.local.json --max-calls 400\n'
     + '选项：--variants current,no_memory,...  --ids 场景ID,...  --out 目录  --max-calls N\n'
-    + '默认选2个场景、no_memory/current两组。--full为18场景、3组，默认每场景重复2次。无自动重试整轮或断点续跑。');
+    + '默认选2个场景、no_memory/current两组。--full为31场景、3组，默认每场景重复2次。无自动重试整轮或断点续跑。');
   process.exit(0);
 }
 if (args.includes('--list')) { console.log(JSON.stringify({ version: VERSION, variants: VARIANTS, scenarios: SCENARIOS }, null, 2)); process.exit(0); }
@@ -106,6 +106,7 @@ process.on('SIGINT', onInterrupt);
 process.on('SIGTERM', onInterrupt);
 const started = new Date().toISOString();
 const publicConfig = { provider: config.provider, model: config.model, baseUrl: config.baseUrl, answerParams: config.params,
+  correctionParams: {temperature:0,maxTokens:1800,thinking:false},
   extractionParams: { temperature: 0.3, topP: 1, maxTokens: 1100, thinking: false }, pricing: config.pricing || null };
 const sourceManifest = [];
 for (const dir of ['core', 'data', 'tools/core-eval']) for (const filename of files(path.join(root, dir))) {
@@ -123,7 +124,7 @@ fs.cpSync(path.join(sandbox, 'tools'), path.join(out, 'source/tools'), { recursi
 for (const rel of ['tools/core-eval.mjs', 'tools/cdp.mjs']) fs.copyFileSync(path.join(root, rel), path.join(out, 'source', rel));
 atomicJson(path.join(out, 'scenarios.json'), selected);
 atomicJson(path.join(out, 'source-manifest.json'), sourceManifest);
-const protocol = { version: VERSION, mode: live ? 'live' : 'pipeline-only', started, configuration: publicConfig,
+const protocol = { version: VERSION, reloadBeforeAnswers: true, mode: live ? 'live' : 'pipeline-only', started, configuration: publicConfig,
   scenarioSha256: sha(JSON.stringify(selected)), sourceSha256: sha(JSON.stringify(sourceManifest)),
   variants, scenarioIds: selected.map((s) => s.id), repeats, maxCalls, node: process.version,
   design: 'Frozen new chat/group cases; independent extraction and independent summary per case/repeat; same audience evidence and management actions, same model/answer params/4000 budget; cyclic order; all runs retained',
@@ -136,6 +137,7 @@ function persist() {
 function mockResponse(body) {
   const isExtract = body.messages[0]?.content.includes('记忆整理助手');
   let content = '不知道';
+  if(body.messages[0]?.content.includes('记忆纠正关联器')) content=JSON.stringify({factIds:[],messageIds:[]});
   if (isExtract) {
     const raw = body.messages.at(-1).content.split('新增聊天记录（JSON，id用于sourceIds）：\n').at(-1);
     const sources = JSON.parse(raw);
@@ -219,6 +221,9 @@ try {
       callIndexes: calls.slice(prepCallStart).map((c) => c.index), error: calls.slice(prepCallStart).some((c) => c.error) });
     persist();
     if (calls.slice(prepCallStart).some((c) => c.error)) { stopReason ||= 'upstream_error'; break; }
+    await page.goto(origin);
+    for(let ready=0;ready<150;ready++){if(await page.eval('!!window.coreEvaluation'))break;await sleep(100);}
+    await page.eval('window.coreEvaluation.restore()');
     // Rotate order deterministically; no choosing the best answer or retrying a failed cell.
     const order = [...variants.slice(i % variants.length), ...variants.slice(0, i % variants.length)];
     for (const variant of order) {

@@ -102,16 +102,37 @@ export function filterMemoryContext(items, memory, { charId, source = 'private',
   return result;
 }
 
-export function correctFact(memory, id, replacement) {
+export function correctFact(memory, id, replacement, { relatedIds = [], blockedSources = [], retainedFacts = [] } = {}) {
   const m = normalizeMemory(memory);
   const record = m.factRecords.find((r) => r.id === id);
   if (!record || !['active', 'stale'].includes(record.status)) throw new Error('这条记忆已改变，请刷新后重试');
   const text = String(replacement || '').trim();
   if (!text || text.length > 500) throw new Error('请输入1至500字的纠正内容');
   const now = Date.now();
-  record.status = 'superseded'; record.blocked = true; record.updatedAt = now;
+  const ids = new Set([id, ...relatedIds]);
+  for (const r of m.factRecords) if (ids.has(r.id)) {
+    if (!['active', 'stale'].includes(r.status)) throw new Error('关联记忆已改变，请重新纠正');
+    r.status = 'superseded'; r.blocked = true; r.updatedAt = now;
+  }
+  for (const kept of retainedFacts) {
+    const original = m.factRecords.find((r) => r.id === kept.id && ids.has(r.id));
+    if (!original || !String(kept.text || '').trim() || String(kept.text).length > 500) throw new Error('保留事实校验失败');
+    m.factRecords.push({ ...original, id: createId('fact'), text: kept.text.trim(), status: 'active',
+      blocked: false, origin: 'model', retainedFrom: original.id, createdAt: now, updatedAt: now });
+  }
+  // Source-only echoes need a tombstone too, even if extraction omitted them.
+  for (const source of blockedSources) if (!blockedMemorySource(m, source)) {
+    m.factRecords.push({ id: createId('fact'), text: '原对话中的同义旧表述（已纠正）',
+      status: 'superseded', blocked: true, origin: 'model', sources: [source],
+      sourceStatus: 'verified', createdAt: now, updatedAt: now, correctionOf: id });
+  }
+  // An untouched time/price can share a message with the corrected location.
+  // Keep that independently valid fact when rebuilding, since the raw message
+  // is now blocked and cannot be used to extract it again.
+  for (const r of m.factRecords) if (r.status === 'active' && !ids.has(r.id) &&
+    r.sources.some((s) => blockedMemorySource(m, s))) r.preservedByCorrection = id;
   m.factRecords.push({ id: createId('fact'), text, status: 'active', origin: 'manual', sources: [],
-    sourceStatus: 'unverified', createdAt: now, updatedAt: now, replaces: id });
+    sourceStatus: 'unverified', createdAt: now, updatedAt: now, replaces: id, replacesIds: [...ids] });
   m.summaryStatus = 'stale';
   return normalizeMemory(m);
 }
@@ -128,10 +149,11 @@ export function retractFact(memory, id) {
 /** 只把模型给出的有效sourceIds映射到本轮已验证的消息，绝不伪造来源。 */
 export function mergeExtractedMemory(memory, parsed, sourceMap, { rebuild = false } = {}) {
   const m = normalizeMemory(memory), now = Date.now();
+  const retiredSources = new Set();
   let invalidCitation = false;
   const blockedTexts = new Set(m.factRecords.filter((r) => r.blocked).map((r) => r.text));
   if (rebuild) for (const r of m.factRecords) {
-    if (r.status === 'active' && r.origin !== 'manual') r.status = 'superseded';
+    if (r.status === 'active' && !['manual', 'game'].includes(r.origin) && !r.retainedFrom && !r.preservedByCorrection) r.status = 'superseded';
   }
   for (const value of Array.isArray(parsed.facts) ? parsed.facts : []) {
     const text = String(typeof value === 'string' ? value : value?.text || '').trim().slice(0, 500);
@@ -141,10 +163,33 @@ export function mergeExtractedMemory(memory, parsed, sourceMap, { rebuild = fals
     if (ids.some((id) => !sourceMap.has(String(id)))) { invalidCitation = true; continue; }
     const sources = [...new Set(ids.map(String))].map((id) => sourceMap.get(id));
     if (sources.some((s) => blockedMemorySource(m, s))) continue;
+    // Only an explicit update, backed by a strictly later source in the SAME
+    // conversation, may retire previous model facts. Manual/game facts are protected.
+    if (value?.change === 'confirmed_update' && sources.length) {
+      const laterThan = (old) => old.length && old.every((s) => sources.some((n) =>
+        n.kind === s.kind && n.conversationId === s.conversationId && n.at > s.at));
+      const supersedes = Array.isArray(value.supersedes) ? value.supersedes.map(String) : [];
+      for (const r of m.factRecords) if (supersedes.includes(r.id) && r.status === 'active' && r.origin === 'model' && laterThan(r.sources)) {
+        r.status = 'superseded'; r.blocked = true; r.updatedAt = now;
+      }
+      const oldIds = Array.isArray(value.obsoleteSourceIds) ? value.obsoleteSourceIds.map(String) : [];
+      if (oldIds.every((id) => sourceMap.has(id))) for (const id of new Set(oldIds)) {
+        const old = sourceMap.get(id);
+        if (!laterThan([old]) || blockedMemorySource(m, old)) continue;
+        retiredSources.add(sourceKey(old) + ':' + old.signature);
+        m.factRecords.push({ id: createId('fact'), text: '原安排（已由后续明确通知更新）',
+          status: 'superseded', blocked: true, origin: 'model', sources: [old],
+          sourceStatus: 'verified', createdAt: now, updatedAt: now });
+      }
+    }
     const existing = m.factRecords.find((r) => r.status === 'active' && r.text === text);
     if (existing) continue;
     m.factRecords.push({ id: createId('fact'), text, status: 'active', origin: 'model', sources,
       sourceStatus: sources.length ? 'verified' : 'unverified', createdAt: now, updatedAt: now });
+  }
+  for (const r of m.factRecords) if (r.status === 'active' && r.origin === 'model' && r.sources.length &&
+    r.sources.every((s) => retiredSources.has(sourceKey(s) + ':' + s.signature))) {
+    r.status = 'superseded'; r.blocked = true; r.updatedAt = now;
   }
   // 不截断持久层的旧记录；只有提示词选择有界，历史纠错记录始终可查。
   m.summary = String(parsed.summary ?? m.summary).slice(0, 1500);

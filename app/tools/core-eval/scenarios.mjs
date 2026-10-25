@@ -1,5 +1,5 @@
 /** Frozen before live calls. New task shapes, not substitutions of the old location fixture. */
-export const VERSION='core-eval-v2.1';
+export const VERSION='core-eval-v3.2';
 export const VARIANTS={no_memory:'仅当前窗口',role_summary:'角色独立摘要（同听众边界、同预算）',current:'当前实际机制'};
 export const CATEGORY_LABELS={chat:'私聊',group:'群聊'};
 const cases=[
@@ -23,5 +23,19 @@ const cases=[
  ['group','source_edit',['大家确认晚餐订了四份素食。'],'我们确认订了多少份素食？','原消息已改为尚未确认份数，所以不能断言四份。',[['不知道','未定','没有','未确认','还没','不确定']],['四份']],
 ];
 export const SCENARIOS=cases.map(([category,id,messages,question,reference,required,forbidden])=>({id:`${category}-${id}`,category,messages,question,reference,required,forbidden,target:['private_boundary','new_member','public_after_private'].includes(id)?'b':'a',budgetTokens:4000,action:id==='correction'?'correct':id==='retracted'?'retract':id==='source_edit'?'edit':'none',replacement:id==='correction'?'明晚聚会的地点改为青石厅，开始时间仍为六点。':null}));
+const revisions=[
+ {id:'chat-revision_chain',category:'chat',messages:['设计复盘会定在周一早上九点。','复盘会改到周三下午两点。','最后确认复盘会周四晚上八点，前两次安排作废。','另一个跑步活动仍为周一早上九点。'],question:'复盘会最后几点？跑步活动呢？',reference:'复盘会周四晚上八点；跑步周一早上九点。',required:[['周四'],['八点','8点'],['周一'],['九点','9点']],forbidden:[]},
+ {id:'group-revision_chain',category:'group',messages:['项目复盘原定周二下午一点。','复盘改周五晚上六点。','最终复盘定周六早上十点，原先两个时间不再有效。','团建仍为周五晚上六点，别和复盘混淆。'],question:'复盘和团建各是什么时间？',reference:'复盘周六早上十点；团建周五晚上六点。',required:[['周六'],['十点','10点'],['周五'],['六点','6点']],forbidden:[]},
+ {id:'chat-tentative_update',category:'chat',messages:['面试已确认周五上午十点。','我在考虑改到周二下午三点，但只是想法，尚未确认更改。'],question:'面试当前确认的时间是什么？',reference:'仍是周五上午十点；周二只是设想。',required:[['周五'],['十点','10点']],forbidden:[]},
+ {id:'group-distinct_people',category:'group',messages:[{role:'assistant',speaker:'a',content:'我林青的面试是周二上午九点。'},{role:'assistant',speaker:'b',content:'我周予的面试改到周四下午三点。'}],question:'林青和周予分别什么时候面试？',reference:'林青周二上午九点，周予周四下午三点，不能相互覆盖。',required:[['周二'],['九点','9点'],['周四'],['三点','3点']],forbidden:[]},
+ ...['chat','group'].map(category=>({id:category+'-synonym_correction',category,messages:['周末读书会在青栎书屋集合。',{role:'assistant',speaker:'a',content:'记住了，大家这周末读书碰头就去青栎书屋。'},'对，读书会的碰面地址就是青栎书屋。','另一个摄影活动也在青栎书屋，时间是下个月。','读书会开始时间是下午三点。'],action:'correct',rebuildAfterCorrection:true,needle:'青栎书屋',subject:'读书会',replacement:'周末读书会的集合地点是蓝鲸书屋。',question:'读书会的地点和时间是什么？摄影活动在哪里？',reference:'读书会蓝鲸书屋，下午三点；摄影活动仍为青栎书屋。',required:[['蓝鲸书屋'],['三点','3点'],['青栎书屋']],forbidden:[]})),
+ {id:'group-cross_context_correction',category:'group',messages:[{role:'user',source:'private',content:'周末读书会在青栎书屋集合。'},{role:'user',content:'现在公开通知：周末读书会的集合地点是青栎书屋。'},{role:'assistant',speaker:'a',content:'明白，读书会我们就在青栎书屋见。'}],action:'correct',rebuildAfterCorrection:true,needle:'青栎书屋',subject:'读书会',replacement:'周末读书会集合地点更正为蓝鲸书屋。',question:'周末读书会现在在哪里集合？',reference:'蓝鲸书屋；已听过私聊和群聊的同一角色只需纠正一次。',required:[['蓝鲸书屋']],forbidden:['青栎书屋']},
+];
+for(const category of ['chat','group']){
+ revisions.push({id:category+'-incremental_change',category,incremental:true,messages:['春季筹备会确定周一上午九点。','春季筹备会改到周三下午两点，原时间不再有效。','最终确定春季筹备会周四晚上八点，前面的时间都作废。'],question:'春季筹备会最终是什么时间？',reference:'周四晚上八点，前面的时间已作废。',required:[['周四'],['八点','8点']],forbidden:['周三下午两点']});
+ revisions.push({id:category+'-legacy_composite',category,action:'correct',rebuildAfterCorrection:true,needle:'青栎书屋',subject:'读书会',messages:['读书会在青栎书屋。','读书会在青栎书屋，下午三点开始。','摄影活动在青栎书屋，下个月举行。'],legacyFacts:[{text:'读书会在青栎书屋。',sourceIds:['0']},{text:'读书会在青栎书屋，下午三点开始。',sourceIds:['1']},{text:'读书会开始时间为下午三点。',sourceIds:['1']},{text:'摄影活动在青栎书屋，下个月举行。',sourceIds:['2']}],replacement:'读书会地点改为蓝鲸书屋。',question:'读书会几点在哪里？摄影活动在哪里？',reference:'读书会蓝鲸书屋、下午三点；摄影活动仍为青栎书屋。',required:[['蓝鲸书屋'],['三点','3点'],['青栎书屋']],forbidden:[]});
+}
+for(const category of ['chat','group']) revisions.push({id:category+'-unknown_echo',category,neutralPersona:true,historyEcho:true,action:'correct',rebuildAfterCorrection:true,needle:'青栎书屋',subject:'读书会',messages:[{role:'user',content:'周末读书会在哪里集合？'},{role:'assistant',speaker:'a',content:'不知道。当前没有可靠记录能确认周末读书会的集合地点。'},{role:'user',source:'group',content:'现在向群内公开确认：周末读书会在青栎书屋，下午三点开始。'},{role:'assistant',speaker:'a',source:'group',content:'收到，青栎书屋，下午三点，我记下了。'},{role:'user',content:'周末读书会现在在哪里？'},{role:'assistant',speaker:'a',content:'不知道。'}],replacement:'周末读书会的集合地点改为蓝鲸书屋。',question:'周末读书会现在在哪里集合，几点开始？',reference:'蓝鲸书屋，下午三点。角色过去回答不知道不覆盖后续公开消息和人工纠正。',required:[['蓝鲸书屋'],['三点','3点']],forbidden:['青栎书屋']});
+SCENARIOS.push(...revisions.map(s=>({target:'a',budgetTokens:4000,action:'none',replacement:null,...s})));
 export const PILOT_IDS=SCENARIOS.map(s=>s.id);
 export function scoreAnswer(s,text,{error=false,truncated=false}={}){const pass=!error&&!truncated&&s.required.every(xs=>xs.some(x=>String(text).includes(x)))&&!s.forbidden.some(x=>String(text).includes(x));return {pass,status:error?'error':truncated?'truncated':pass?'pass':'fail',kind:'literal-proxy-not-semantic',needsReview:true};}

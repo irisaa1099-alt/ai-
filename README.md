@@ -36,3 +36,5 @@ node server.mjs
 自有代码采用 [MIT](LICENSE)；第三方与原人物模板的排除范围见 [NOTICE](NOTICE.md)。
 
 新版参赛材料围绕私聊→群聊→狼人杀→局后聊天展开。[新场景与合理摘要基线](app/tools/core-eval/README.md) · [最小复用示例](app/examples/README.md)。
+
+R3修订：连续改期淘汰明确旧安排，一次纠正关联同义记忆并保留独立信息。见 [实现与边界](app/docs/MEMORY-REVISION-2026-10-25.md)。
