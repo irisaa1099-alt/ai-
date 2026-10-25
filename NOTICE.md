@@ -1,6 +1,6 @@
 # 来源与开放边界
 
-趣聊是原生 JavaScript、HTML、CSS 和 Node.js 应用。项目核心代码的开源许可证待权利人确认；源码公开可见不自动等于授予 MIT 许可。未确认前不以 MIT 已生效对外宣传。
+趣聊是原生 JavaScript、HTML、CSS 和 Node.js 应用。经项目权利人于2026年10月25日确认，自有代码以根目录 LICENSE 的 MIT 许可开放。该许可不覆盖第三方图标、原人物模板、外部模型服务、用户数据或其他第三方资源；这些内容按本说明的各自范围与许可处理。
 
 界面图标使用 Lucide 0.468.0，固定提交 f12b0de177fbc2a6795e99be065887e72b237123，完整许可见 app/licenses/LUCIDE-LICENSE.txt，逐图来源见 app/licenses/lucide-sources.json。仅调整外层显示尺寸与线宽，保留适用 ISC 和 Feather 衍生部分的 MIT 声明。
 

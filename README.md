@@ -30,3 +30,7 @@ node server.mjs
 核心贡献是让角色按实际经历使用跨场景记忆，并提供来源与纠错。参赛运行、验证、复用与限制见 [复现说明](app/docs/CONTEST-REPRODUCE.md)，本轮变更见 [稳定性修订](app/docs/BUGFIX-2026-10-25.md)，第三方边界见 [来源说明](NOTICE.md)。
 
 构建中性模板副本：`node app/tools/build-contest-release.mjs /绝对路径/新的输出目录`。不会复制用户数据库或凭据，不改变正式人物库。
+
+## 许可
+
+自有代码采用 [MIT](LICENSE)；第三方与原人物模板的排除范围见 [NOTICE](NOTICE.md)。
