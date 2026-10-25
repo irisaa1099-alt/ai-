@@ -19,7 +19,7 @@
  *   · 首夜出局有遗言，后续夜晚出局无遗言（场规简化）。
  *   · 本实现不含：警长竞选、守卫、狼王/白狼王/狼美人/隐狼/骑士（规则文件里的可选板子）。
  */
-import { num, clamp, sleep } from './util.js';
+import { num, clamp, sleep, createId } from './util.js';
 import { appendGroupMessage, getMemory, appendGameMemoryFact, getCharacter } from './store.js';
 import { chat, chatStream } from './llm.js';
 import { buildSystemPrompt } from './prompt.js';
@@ -1258,6 +1258,7 @@ export class WerewolfGame {
     const dealt = assignRoles(players, board);
     const state = {
       version: 1,
+      gameId: createId('game'),
       groupId: String((this.group && this.group.id) || ''),
       groupName: String((this.group && this.group.name) || '群聊'),
       createdAt: Date.now(),
@@ -2009,11 +2010,10 @@ export class WerewolfGame {
       try {
         // 局中把角色删了：玩家对象是开局快照，这里要确认人还在，别给已删角色写记忆
         if (!(await getCharacter(p.id))) continue;
-        const mem = await getMemory(p.id);
-        const facts = Array.isArray(mem.facts) ? mem.facts.slice() : [];
-        // 同一局不重复写（重放/续局可能再次走到这里）
-        if (facts.some((f) => String(f).includes(`${stamp}在群「${s.groupName}」玩了一局狼人杀`))) continue;
-        await appendGameMemoryFact(p.id, line);
+        // Per-game identity avoids losing a second game in the same group/day.
+        // Atomic store dedup also prevents replay from restoring a withdrawn record.
+        const gameId = String(s.gameId || `${s.groupId}:${s.createdAt}`);
+        await appendGameMemoryFact(p.id, line, { gameId });
       } catch {
         /* 记忆写失败不影响结算 */
       }

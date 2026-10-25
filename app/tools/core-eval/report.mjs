@@ -1,0 +1,6 @@
+import fs from 'node:fs';import path from 'node:path';
+export function writeReport({out,protocol,rows,preparations,calls,isolation,stopReason}){
+ const stats=protocol.variants.map(variant=>{const rs=rows.filter(r=>r.variant===variant);return{variant,n:rs.length,literalProxyPass:rs.filter(r=>r.score.pass).length,errors:rs.filter(r=>r.error).length,meanMs:Math.round(rs.reduce((a,r)=>a+r.elapsedMs,0)/rs.length)}});
+ const summary={protocol,stats,errors:rows.filter(r=>r.error).length,extractionMisses:preparations.filter(p=>p.targetExtractionExpected&&!p.extractedTargetFacts).map(p=>p.scenarioId),usage:calls.reduce((a,c)=>({input:a.input+(c.response?.usage?.prompt_tokens||0),output:a.output+(c.response?.usage?.completion_tokens||0)}),{input:0,output:0}),isolation,stopReason};fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(summary,null,2));
+ fs.writeFileSync(path.join(out,'report.md'),`# 聊天与群聊新场景评测\n\n协议 ${protocol.version}，${rows.length}/${protocol.expectedCells}条回答。每个场景重复${protocol.repeats}次；独立摘要与当前机制使用同角色可见记录、管理通知、模型与4000上下文预算。摘要每次独立生成，当前机制使用实际产品提取流程。两种准备开销均保留。\n\n${JSON.stringify(stats,null,2)}\n\n这里的literalProxyPass只是词面检查；全组语义复核另存。不是用户试用，不以此证明完整游戏质量。所有失败均保留，不挑选轮次。\n`);return summary;
+}

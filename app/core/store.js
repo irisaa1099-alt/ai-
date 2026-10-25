@@ -1265,11 +1265,11 @@ export async function retractMemoryFact(charId, recordId) {
 }
 
 /** 确定性游戏结算追加记忆，保留新结构与纠错记录，并避免读后写覆盖。 */
-export async function appendGameMemoryFact(charId, text) {
+export async function appendGameMemoryFact(charId, text, { gameId = '' } = {}) {
   return updateMemoryAtomic(charId, (memory) => {
-    if (memory.factRecords.some((r) => r.text === text && (r.status === 'active' || r.blocked))) return memory;
+    if (memory.factRecords.some((r) => gameId ? r.gameId === gameId : r.text === text && (r.status === 'active' || r.blocked))) return memory;
     const now = Date.now();
-    memory.factRecords.push({ id: createId('fact'), text: String(text), origin: 'game', status: 'active',
+    memory.factRecords.push({ id: createId('fact'), text: String(text), origin: 'game', gameId: String(gameId), status: 'active',
       sources: [], sourceStatus: 'unverified', createdAt: now, updatedAt: now });
     return memory;
   });

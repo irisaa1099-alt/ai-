@@ -51,7 +51,7 @@ for (const budget of [1000, 2000, 4000, 8000]) {
       const text = verify(result, budget, label);
       assert.ok(text.includes(marker), `${label}: 近期经历被挤出`);
       assert.ok(text.includes('CURRENT_TURN_'), `${label}: 最新发言被挤出`);
-      assert.ok(text.includes('绝不能替他们说话'), `${label}: 必要群聊规则被挤出`);
+      assert.ok(/绝不能替他们(?:说话|生成新的台词)/.test(text), `${label}: 必要群聊规则被挤出`);
       assert.ok(!result.meta.insufficientBudget, `${label}: 常规预算不应完全拒绝装配`);
       assert.ok(result.meta.breakdown.find((b) => b.kind === 'recent').tokens <= Math.min(1200, Math.floor(budget * 0.2)) + 1,
         `${label}: 近期经历超过20%/1200上限（额外1个为分隔符取整）`);

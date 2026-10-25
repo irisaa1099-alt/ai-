@@ -15,3 +15,6 @@ app/data/db/*
 !app/data/db/.gitkeep
 *.backup.json
 aichat-backup-*.json
+
+# 评测本地连接配置
+app/tools/**/config.local.json

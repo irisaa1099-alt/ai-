@@ -628,7 +628,7 @@ console.log('\n=== 5.6 群聊引擎 core/group.js ===');
     assert.ok(sys.includes('群名：深夜食堂'), '缺少群名');
     assert.ok(sys.includes('凌晨三点的居酒屋'), '缺少群主题/场景');
     assert.ok(sys.includes('你（林晚）、阿哲、小满'), `成员名单不对：${sys.slice(0, 400)}`);
-    assert.ok(sys.includes('绝不能替他们说话'), '缺少"不要替其他角色说话"的铁律');
+    assert.ok(/绝不能替他们(?:说话|生成新的台词)/.test(sys), '缺少"不要替其他角色说话"的铁律');
     assert.ok(sys.includes('阿哲：我啊，怎么了'), '群聊记录没有带进提示词');
     assert.ok(sys.includes('林晚'), '没有以说话者的身份装配人设');
     assert.ok(!sys.includes('你现在扮演「阿哲」'), '串了人设：把别的角色当成自己');
