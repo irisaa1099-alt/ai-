@@ -138,11 +138,12 @@ console.log('\n=== 3. data/models.js ===');
       assert.ok(['openai', 'anthropic', 'gemini', 'ollama'].includes(p.kind), `${id} kind 非法：${p.kind}`);
       assert.ok(Array.isArray(p.models), `${id} models 不是数组`);
     }
-    for (const id of ['deepseek', 'openai', 'anthropic', 'gemini', 'ollama']) {
+    assert.deepEqual(Object.keys(m.PROVIDERS_META), ['ollama']);
+    for (const id of ['ollama']) {
       assert.ok(m.PROVIDERS_META[id], `缺少供应商 ${id}`);
     }
   });
-  await test('getProvider 未知返回 custom 副本', () => {
+  await test('getProvider 旧供应商回退到本地配置', () => {
     const p = m.getProvider('不存在的供应商');
     assert.ok(p && p.id);
   });
@@ -1557,7 +1558,7 @@ console.log('\n=== 6.1 运行时冲突合并与代理请求（回归）===');
   });
 
   const llm = await load('core/llm.js');
-  await test('DeepSeek 请求级思考开关：直连只对 DeepSeek 下发', async () => {
+  await test('旧供应商和远程地址统一迁移到本地代理', async () => {
     const oldFetch = globalThis.fetch;
     const requests = [];
     globalThis.fetch = async (url, init) => {
@@ -1575,14 +1576,17 @@ console.log('\n=== 6.1 运行时冲突合并与代理请求（回归）===');
         provider: 'custom', model: 'custom-model', apiKey: 'test-key', baseUrl: 'https://example.invalid/v1',
         messages: [{ role: 'user', content: '测试' }], params: { thinking: false },
       });
-      assert.deepEqual(requests[0].body.thinking, { type: 'disabled' });
+      assert.equal(requests[0].url, '/api/llm');
+      assert.equal(requests[1].url, '/api/llm');
+      assert.equal(requests[1].body.baseUrl, undefined);
+      assert.equal(requests[0].body.provider, 'ollama');
       assert.equal(Object.hasOwn(requests[1].body, 'thinking'), false, '非 DeepSeek 不应收到专用字段');
     } finally {
       globalThis.fetch = oldFetch;
     }
   });
 
-  await test('DeepSeek 旧模型名透明迁移且保留思考语义', async () => {
+  await test('旧商业模型名透明迁移到项目 Qwen3', async () => {
     const oldFetch = globalThis.fetch;
     const requests = [];
     globalThis.fetch = async (url, init) => {
@@ -1600,10 +1604,10 @@ console.log('\n=== 6.1 运行时冲突合并与代理请求（回归）===');
         provider: 'deepseek', model: 'deepseek-reasoner', apiKey: 'test-key',
         messages: [{ role: 'user', content: '测试' }],
       });
-      assert.equal(requests[0].model, 'deepseek-flash');
-      assert.deepEqual(requests[0].thinking, { type: 'disabled' });
-      assert.equal(requests[1].model, 'deepseek-flash');
-      assert.deepEqual(requests[1].thinking, { type: 'enabled' });
+      assert.equal(requests[0].model, 'quliao-qwen3:4b');
+      assert.equal(requests[0].thinking, undefined);
+      assert.equal(requests[1].model, 'quliao-qwen3:4b');
+      assert.equal(requests[1].thinking, undefined);
     } finally {
       globalThis.fetch = oldFetch;
     }
@@ -1651,8 +1655,8 @@ console.log('\n=== 6.1 运行时冲突合并与代理请求（回归）===');
       await llm.chat({ ...base, params: { ...store.DEFAULT_SETTINGS.params, thinking: models.thinkingParamOf('off') } });
       await llm.chat({ ...base, params: { ...store.DEFAULT_SETTINGS.params, thinking: models.thinkingParamOf('on') } });
       assert.equal(Object.hasOwn(requests[0], 'thinking'), false, '「跟随模型默认」不该下发 thinking（下发就等于替用户做了决定）');
-      assert.deepEqual(requests[1].thinking, { type: 'disabled' });
-      assert.deepEqual(requests[2].thinking, { type: 'enabled' });
+      assert.equal(requests[1].thinking, undefined);
+      assert.equal(requests[2].thinking, undefined);
     } finally {
       globalThis.fetch = oldFetch;
     }
@@ -1673,8 +1677,9 @@ console.log('\n=== 6.1 运行时冲突合并与代理请求（回归）===');
         provider: 'deepseek', model: 'deepseek-flash', apiKeys: { deepseek: 'test-key' }, useProxy: false,
       });
       assert.equal(result.ok, true);
-      assert.deepEqual(request.body.thinking, { type: 'disabled' });
-      assert.equal(request.body.max_tokens, 256);
+      assert.equal(request.body.provider, 'ollama');
+      assert.equal(request.body.params.thinking, false);
+      assert.equal(request.body.params.maxTokens, 256);
     } finally {
       globalThis.fetch = oldFetch;
     }
@@ -1835,9 +1840,9 @@ console.log('\n=== 6.1 运行时冲突合并与代理请求（回归）===');
       const me = game.state.players.find((p) => !p.isUser);
       const text = await game.askLLM(me, werewolf.dayPromptFor(game.state, me), 'day', { live: true });
       assert.equal(bodies.length, 2, `被截断应当重问一次，实际发了 ${bodies.length} 次请求`);
-      assert.deepEqual(bodies[0].thinking, { type: 'disabled' }, '白天发言也必须关掉思考（思考会与正文抢 max_tokens）');
-      assert.equal(bodies[0].max_tokens, 600, '白天发言的默认额度');
-      assert.ok(bodies[1].max_tokens > 600, `重问应当放宽额度，实际 ${bodies[1].max_tokens}`);
+      assert.equal(bodies[0].params.thinking, false, '保留狼人杀的非思考生成意图');
+      assert.equal(bodies[0].params.maxTokens, 600, '白天发言的默认额度');
+      assert.ok(bodies[1].params.maxTokens > 600, `重问应当放宽额度，实际 ${bodies[1].params.maxTokens}`);
       assert.ok(/投票/.test(text), `应当采用重问拿到的完整版，实际 ${JSON.stringify(text)}`);
       assert.ok(!/枪口$/.test(text.trim()), `不该把半句当完整发言，实际 ${JSON.stringify(text)}`);
     } finally {
@@ -1873,14 +1878,14 @@ console.log('\n=== 6.1 运行时冲突合并与代理请求（回归）===');
     let request;
     globalThis.fetch = async (url, init) => {
       request = { url, init };
-      return new Response(JSON.stringify({ models: ['server-model'] }), {
+      return new Response(JSON.stringify({ models: ['quliao-qwen3:4b', 'not-installed-cloud-model'] }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       });
     };
     try {
-      assert.deepEqual(await llm.listModels('openai', '', '', { useProxy: true }), ['server-model']);
+      assert.deepEqual(await llm.listModels('openai', '', '', { useProxy: true }), ['quliao-qwen3:4b']);
       assert.equal(request.url, '/api/models');
-      assert.equal(JSON.parse(request.init.body).baseUrl, '');
+      assert.equal(JSON.parse(request.init.body).baseUrl, undefined);
     } finally {
       globalThis.fetch = oldFetch;
     }
@@ -1899,7 +1904,7 @@ console.log('\n=== 7. data/templates.js ===');
     await test('模板数量与分组', () => {
       assert.ok(Array.isArray(t.CHARACTER_TEMPLATES), 'CHARACTER_TEMPLATES 不是数组');
       assert.ok(t.CHARACTER_TEMPLATES.length >= 30, `模板只有 ${t.CHARACTER_TEMPLATES.length} 个，要求 ≥30`);
-      assert.ok(t.TEMPLATE_GROUPS.length >= 7, `分组只有 ${t.TEMPLATE_GROUPS.length} 个`);
+      assert.ok(t.TEMPLATE_GROUPS.length >= 6, `分组只有 ${t.TEMPLATE_GROUPS.length} 个`);
     });
     await test('每个模板结构完整、id 唯一', () => {
       const ids = new Set();
@@ -2015,54 +2020,15 @@ console.log('\n=== 7.6 云端语音配置：密钥与地址必须跟着所选供
 {
   const tts = await load('voice/tts.js');
 
-  await test('cloudConfig：选了 Qwen 就绝不用 OpenAI 的密钥与地址', () => {
-    // 回归守（跨供应商泄露密钥 + 请求错服务商）：曾经这里是
-    //   apiKey  = v.apiKey || keys[provider] || keys.openai
-    //   baseUrl = v.baseUrl || urls[provider] || urls.openai
-    // 于是"选了 Qwen 但没填 Qwen 密钥"时，一把 OpenAI 的密钥被发到 Qwen 的接口上。
-    const c = tts.cloudConfig({
-      provider: 'deepseek',
-      apiKeys: { openai: 'sk-openai-LEAK', deepseek: 'sk-deepseek' },
-      baseUrls: { openai: 'https://proxy.example.com/openai/v1' },
-      voice: { ttsProvider: 'qwen' },
-    });
-    assert.equal(c.provider, 'qwen', `provider 解析错了：${c.provider}`);
-    assert.equal(c.apiKey, '', `不该退回 OpenAI 的密钥，实际拿到：${c.apiKey}`);
-    assert.ok(!c.baseUrl.includes('proxy.example.com'), `不该退回 OpenAI 的反代地址：${c.baseUrl}`);
-    assert.equal(c.baseUrl, 'https://dashscope.aliyuncs.com/compatible-mode/v1', `应使用 Qwen 官方地址，实际 ${c.baseUrl}`);
-    assert.equal(c.overrideBaseUrl, '', '代理请求不应把官方默认地址误当用户覆盖地址');
-  });
-
-  await test('cloudConfig：认所选供应商自己的密钥与反代地址', () => {
-    const c = tts.cloudConfig({
-      provider: 'deepseek',
-      apiKeys: { openai: 'sk-openai', qwen: 'sk-qwen' },
-      baseUrls: { openai: 'https://proxy.example.com/openai/v1', qwen: 'https://my-relay.local/qwen/v1' },
-      voice: { ttsProvider: 'qwen' },
-    });
-    assert.equal(c.apiKey, 'sk-qwen', `应取 Qwen 的密钥，实际 ${c.apiKey}`);
-    assert.equal(c.baseUrl, 'https://my-relay.local/qwen/v1', `应取 Qwen 的反代地址，实际 ${c.baseUrl}`);
-    assert.equal(c.overrideBaseUrl, c.baseUrl, '自定义地址应交给代理并接受白名单校验');
-  });
-
-  await test('cloudConfig：custom 没填地址时留空（不偷偷打到 OpenAI）', () => {
-    const c = tts.cloudConfig({ apiKeys: { custom: 'sk-x' }, voice: { ttsProvider: 'custom' } });
-    assert.equal(c.baseUrl, '', `custom 没有地址时应留空，实际 ${c.baseUrl}`);
-    assert.ok(!c.baseUrl.includes('openai'), '不能回落到 OpenAI 地址');
-  });
-
-  await test('cloudConfig：本地服务不需要密钥（needKey=false）', () => {
-    const ollama = tts.cloudConfig({ voice: { ttsProvider: 'ollama' } });
-    assert.equal(ollama.needKey, false, 'ollama 不该要求密钥');
-    assert.equal(ollama.baseUrl, 'http://127.0.0.1:11434/v1');
-    const openai = tts.cloudConfig({ voice: { ttsProvider: 'openai' } });
-    assert.equal(openai.needKey, true, 'openai 必须要求密钥');
-    assert.equal(openai.baseUrl, 'https://api.openai.com/v1');
-  });
-
-  await test('cloudConfig：供应商中文名用于错误提示', () => {
-    const c = tts.cloudConfig({ voice: { ttsProvider: 'qwen' } });
-    assert.ok(c.label && c.label.includes('通义'), `label 应给出中文名，实际 ${c.label}`);
+  await test('本地版本禁用所有旧云端语音地址与密钥', () => {
+    for (const provider of ['qwen', 'openai', 'custom', 'ollama']) {
+      const cfg = tts.cloudConfig({ provider, apiKeys: { [provider]: 'must-not-leak' },
+        baseUrls: { [provider]: 'https://example.invalid' },
+        voice: { provider: 'cloud', ttsProvider: provider, apiKey: 'must-not-leak' } });
+      assert.equal(cfg.provider, 'webspeech');
+      assert.equal(cfg.apiKey, ''); assert.equal(cfg.baseUrl, '');
+      assert.equal(cfg.needKey, false);
+    }
   });
 
   await test('captureVoiceError：取回云端失败原因（speak 永不 reject 的补偿）', async () => {

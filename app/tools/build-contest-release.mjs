@@ -5,10 +5,10 @@ if(!process.argv[2]||fs.existsSync(out)||out.startsWith(repo+path.sep))throw Err
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 const manifest=[];
 function copy(rel,dest=rel){const src=path.join(app,rel),target=path.join(out,'app',dest);fs.mkdirSync(path.dirname(target),{recursive:true});const bytes=fs.readFileSync(src);fs.writeFileSync(target,bytes);manifest.push({path:'app/'+dest,source:'app/'+rel,sha256:sha(bytes)})}
-for(const dir of ['core','ui','voice','styles','licenses','examples'])for(const entry of fs.readdirSync(path.join(app,dir)))if(fs.statSync(path.join(app,dir,entry)).isFile())copy(dir+'/'+entry);
-for(const rel of ['server.mjs','index.html','icon.svg','sw.js','manifest.webmanifest','.env.example','data/models.js','data/contest-templates.js'])copy(rel);
+for(const dir of ['core','ui','voice','styles','licenses','examples','models'])for(const entry of fs.readdirSync(path.join(app,dir)))if(fs.statSync(path.join(app,dir,entry)).isFile())copy(dir+'/'+entry);
+for(const rel of ['server.mjs','local-start.mjs','index.html','icon.svg','sw.js','manifest.webmanifest','.env.example','data/models.js','data/contest-templates.js'])copy(rel);
 copy('data/contest-templates.js','data/templates.js');
-for(const name of ['CONTEST-REPRODUCE.md','CORE-EXPERIENCE-2026-10-25.md','MEMORY-REVISION-2026-10-25.md','BUGFIX-2026-10-25.md','BUGFIX-2026-10-24.md','MEMORY-PROVENANCE.md','RECENT-EXPERIENCES.md'])copy('docs/'+name);
+for(const name of ['LOCAL-MODEL.md','CONTEST-REPRODUCE.md','CORE-EXPERIENCE-2026-10-25.md','MEMORY-REVISION-2026-10-25.md','BUGFIX-2026-10-25.md','BUGFIX-2026-10-24.md','MEMORY-PROVENANCE.md','RECENT-EXPERIENCES.md'])copy('docs/'+name);
 copy('docs/CONTEST-REPRODUCE.md','README.md');
 for(const name of ['contestcheck.mjs','securitycheck.mjs','memorycheck.mjs','groupbudgetcheck.mjs','optimizationcheck.mjs','providercheck.mjs','recentcheck.mjs','cdp.mjs','memory-eval.mjs','core-eval.mjs','groupcheck.mjs','werewolfcheck.mjs','game-sessioncheck.mjs','memory-revision.test.mjs','mock-llm.mjs'])copy('tools/'+name);
 for(const name of fs.readdirSync(path.join(app,'tools/core-eval')))if(!name.includes('.local.')&&fs.statSync(path.join(app,'tools/core-eval',name)).isFile())copy('tools/core-eval/'+name);

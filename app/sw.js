@@ -8,14 +8,14 @@
  *   2. fetch：
  *      · 非 GET、跨域、/api/ 开头的请求 → 完全不拦截，直接走网络（透传，绝不缓存）。
  *        这样 /api/llm 的 SSE 流式响应不会被破坏。
- *      · 同源静态资源 → stale-while-revalidate：命中缓存立即返回，同时后台拉新并更新缓存。
+ *      · 同源静态资源 → network-first：优先读取当前版本，网络不可用时回退缓存。
  *      · 网络不可用且没有缓存时，导航请求回退到缓存的 index.html，保证离线仍能打开页面。
  *   3. activate：删除旧版本缓存，并立即接管页面。
  * ---------------------------------------------------------------------------
  */
 
-/** v62：更新私聊预算、来源保护、同步与取消任务以及来源明确的图标。 */
-const CACHE = 'aichat-v62';
+/** v68：本地模型迁移修复；静态资源优先联网，离线时回退缓存。 */
+const CACHE = 'aichat-v68';
 
 /** 预缓存的静态资源清单（路径与 app/ 目录下的真实文件一致） */
 const PRECACHE = [
@@ -32,6 +32,7 @@ const PRECACHE = [
   './core/bus.js',
   './core/util.js',
   './core/store.js',
+  './core/local-model.js',
   './core/sync.js',
   './core/entity-sync.js',
   './core/outbox.js',
@@ -118,7 +119,7 @@ self.addEventListener('activate', (event) => {
 });
 
 /* ===========================================================================
- * fetch：stale-while-revalidate
+ * fetch：network-first
  * ======================================================================== */
 
 /**
@@ -143,11 +144,11 @@ function isCacheable(request) {
 }
 
 /**
- * stale-while-revalidate：先给缓存，同时后台更新
+ * network-first：优先取当前版本，离线时使用缓存
  * @param {Request} request
  * @returns {Promise<Response>}
  */
-async function staleWhileRevalidate(request) {
+async function networkFirst(request) {
   const cache = await caches.open(CACHE);
   const cached = await cache.match(request, { ignoreSearch: true });
 
@@ -162,14 +163,9 @@ async function staleWhileRevalidate(request) {
     })
     .catch(() => null);
 
-  if (cached) {
-    // 命中缓存：立即返回，网络更新在后台完成
-    revalidate.catch(() => {});
-    return cached;
-  }
-
   const fresh = await revalidate;
   if (fresh) return fresh;
+  if (cached) return cached;
 
   // 既没有缓存也联不上网
   if (request.mode === 'navigate') {
@@ -210,7 +206,7 @@ self.addEventListener('fetch', (event) => {
   // /api/ 与跨域请求：不调用 respondWith，直接由浏览器透传（流式响应不受影响）
   if (!isCacheable(request)) return;
 
-  event.respondWith(staleWhileRevalidate(request));
+  event.respondWith(networkFirst(request));
 });
 
 /* ===========================================================================

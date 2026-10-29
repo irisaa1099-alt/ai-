@@ -3,12 +3,13 @@
    ========================================================================== */
 
 :root {
+  color-scheme: dark;
   /* 表单控件统一高度：所有 input/select 都落在这个高度上，
      与 34px 的图标按钮、35px 的行内按钮属于同一档，混排时不会互相挤。 */
   --ctrl-h: 35px;
   --ctrl-h-inline: 26px; /* 嵌在 chips / 行内小容器里的输入框 */
 
-  /* 色板（深色默认） */
+  /* 深色色板；入口默认使用下方的浅色主题覆盖。 */
   --bg: #0f1115;
   --bg-soft: #13161c;
   --panel: #171a21;
@@ -52,6 +53,7 @@
 }
 
 html[data-theme="light"] {
+  color-scheme: light;
   --bg: #f4f6fa;
   --bg-soft: #eef1f7;
   --panel: #ffffff;

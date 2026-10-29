@@ -291,7 +291,7 @@ function draftFrom(char) {
   out.muted = Boolean(out.muted);
   out.voice.rate = clamp(num(out.voice.rate, 1), 0.5, 2);
   out.voice.pitch = clamp(num(out.voice.pitch, 1), 0.5, 2);
-  out.voice.provider = out.voice.provider === 'cloud' ? 'cloud' : 'webspeech';
+  out.voice.provider = 'webspeech';
   out.voice.autoplay = ['off', 'short', 'always'].includes(out.voice.autoplay) ? out.voice.autoplay : 'short';
   out.voice.voiceId = out.voice.voiceId == null ? '' : String(out.voice.voiceId);
   return out;
@@ -1274,7 +1274,6 @@ function buildVoiceTab(st) {
       '语音来源',
       selectInput(v.provider, [
         { value: 'webspeech', label: '浏览器内置（免费、离线）' },
-        { value: 'cloud', label: '云端语音（在「设置 → 语音」里配置）' },
       ], (val) => {
         const next = val === 'cloud' ? 'cloud' : 'webspeech';
         // 从"内置"切到"云端"时，若音色还留着系统音色的名字，云端接口会 400 并静默降级回系统音色；
@@ -1286,7 +1285,7 @@ function buildVoiceTab(st) {
         v.provider = next;
         syncVoiceFields();
       }),
-      '浏览器内置音色随系统不同；云端音色更好听，但需要密钥与网络'
+      '使用系统提供的语音音色，无需商业 API Key'
     )
   );
 

@@ -1,3 +1,4 @@
+import { LOCAL_MODEL, LOCAL_BASE_URL, LOCAL_REQUEST_TIMEOUT_MS, LOCAL_REQUEST_TOTAL_MS } from './local-model.js';
 /**
  * core/werewolf.js —— 群聊里的狼人杀（屠边局）
  * ---------------------------------------------------------------------------
@@ -24,7 +25,6 @@ import { appendGroupMessage, getMemory, appendGameMemoryFact, getCharacter } fro
 import { chat, chatStream } from './llm.js';
 import { buildSystemPrompt } from './prompt.js';
 import { getRuntime } from './runtime.js';
-import { PROVIDERS } from './llm.js';
 
 /* ================================================================== *
  * 1. 常量：角色 / 板子
@@ -1170,7 +1170,7 @@ const STEP_GAP = 420;
  * 总时长硬上限会把"正在正常生成"的发言误杀成"这次没回应"。
  * 超时按"这一次没回应"处理，各处的兜底会接手（狼随机刀、票算弃票、发言记为没有发言）。
  */
-const ASK_TIMEOUT_MS = 60000;
+const ASK_TIMEOUT_MS = LOCAL_REQUEST_TIMEOUT_MS;
 
 /**
  * 连续没回应之后改用的短等待：供应商真的挂了时，没必要每个座位都干等 60 秒。
@@ -2331,17 +2331,10 @@ export class WerewolfGame {
   async askLLM(player, prompt, kind = 'day', opts = {}) {
     const s = this.state;
     const settings = this.settings || {};
-    const characterModel = this.members.find((m) => String(m.id) === String(player.id))?.model || player.model;
-    const provider = (characterModel && characterModel.provider) || settings.provider || 'deepseek';
-    const model = (characterModel && characterModel.model) || settings.model || 'deepseek-flash';
-    const apiKey = (settings.apiKeys || {})[provider] || '';
-    const baseUrl = (settings.baseUrls || {})[provider] || '';
-    const meta = PROVIDERS ? PROVIDERS[provider] : null;
-    const needKey = !meta || meta.needKey !== false;
-    if (!settings.useProxy && needKey && !apiKey) {
-      this.stop('no-key');
-      throw new Error('还没有配置 API Key：打开「设置 → 模型」填一个就能继续玩了。');
-    }
+    const provider = 'ollama';
+    const model = LOCAL_MODEL;
+    const apiKey = '';
+    const baseUrl = LOCAL_BASE_URL;
 
     // 白天发言带完整人设（保持"还是同一个人"）；夜间行动**不装人设**（system 只用下面那句），省 token
     // —— 注意"不装人设"只是 system 这一侧；狼的夜间 user 提示词里另有一段公开记录（见 nightPromptFor）
@@ -2421,13 +2414,10 @@ export class WerewolfGame {
       try {
         const r = await chatStream(
           {
-            provider, model, apiKey, baseUrl, messages, params: useParams, useProxy: !!settings.useProxy, stream: true, signal: controller.signal,
-            // 本层已有一个 quiet 看门狗（收到任何增量就重置，默认 60 秒），但"每次滴一点字"
-            // 的供应商能让它永不触发 —— 不传这两个值时唯一的硬上限是 core/llm.js 的
-            // 10 分钟总时限，一次投票就能把整局拖住。这里给一个与之匹配的硬上限：
-            // 60 秒无新内容 / 90 秒总计（失败后还有非流式兜底，见下面那个 chat() 调用）。
-            timeoutMs: 60000,
-            totalTimeoutMs: 90000,
+            provider, model, apiKey, baseUrl, messages, params: useParams, useProxy: true, stream: true, signal: controller.signal,
+            // 与本地模型冷启动预算一致，同时保留整次调用上限。
+            timeoutMs: LOCAL_REQUEST_TIMEOUT_MS,
+            totalTimeoutMs: LOCAL_REQUEST_TOTAL_MS,
           },
           {
             onDelta: (delta, full) => {
@@ -2509,10 +2499,10 @@ export class WerewolfGame {
       const fbParams = truncated ? withMoreTokens(params) : params;
       try {
         const r = await chat({
-          provider, model, apiKey, baseUrl, messages, params: fbParams, useProxy: !!settings.useProxy, signal: ctl.signal,
+          provider, model, apiKey, baseUrl, messages, params: fbParams, useProxy: true, signal: ctl.signal,
           // 非流式没有增量事件，只能靠这两个上限兜住"上游挂着不回"
-          timeoutMs: 60000,
-          totalTimeoutMs: 90000,
+          timeoutMs: LOCAL_REQUEST_TIMEOUT_MS,
+          totalTimeoutMs: LOCAL_REQUEST_TOTAL_MS,
         });
         text = String((r && r.text) || '').trim();
         truncated = !!(r && r.truncated);
@@ -2554,7 +2544,7 @@ export class WerewolfGame {
   }
 
   /**
-   * 这一次调用允许"多久没有新内容"：正常情况下是 askTimeoutMs（60 秒），
+   * 这一次调用允许"多久没有新内容"：正常情况下是 askTimeoutMs（120 秒），
    * 连续 {@link ASK_STALL_AFTER} 次完全没回应就降级成 askStallMs（15 秒），任意一次正常返回即恢复。
    * @returns {number}
    */
@@ -2711,15 +2701,10 @@ function pickRandom(list) {
  * @returns {Promise<{ok:boolean, error:string}>}
  */
 export async function preflight(settings = {}) {
-  const provider = settings.provider || 'deepseek';
-  const model = settings.model || 'deepseek-flash';
-  const apiKey = (settings.apiKeys || {})[provider] || '';
-  const baseUrl = (settings.baseUrls || {})[provider] || '';
-  const meta = PROVIDERS ? PROVIDERS[provider] : null;
-  const needKey = !meta || meta.needKey !== false;
-  if (!settings.useProxy && needKey && !apiKey) {
-    return { ok: false, error: '还没有配置 API Key：打开「设置 → 模型」填一个再开游戏' };
-  }
+  const provider = 'ollama';
+  const model = LOCAL_MODEL;
+  const apiKey = '';
+  const baseUrl = LOCAL_BASE_URL;
   const messages = [
     { role: 'system', content: '你正在玩狼人杀。只回四个字：我准备好了' },
     { role: 'user', content: '请回复：我准备好了' },
@@ -2728,10 +2713,10 @@ export async function preflight(settings = {}) {
   // 再把上限提高到 256，给其他返回偏长的模型/中转站留出余量。
   const params = { temperature: 0, maxTokens: 256, thinking: false };
   let lastErr = null;
-  // 先试流式（主链路）。自检是"用户点了按钮在等"的交互，不能落回 120 秒/10 分钟的默认值。
+  // 本地冷启动可能较慢；首字等待与本地推理一致，总时限仍为有限值。
   try {
     const r = await chatStream(
-      { provider, model, apiKey, baseUrl, messages, params, useProxy: !!settings.useProxy, stream: true, timeoutMs: 30000, totalTimeoutMs: 45000 },
+      { provider, model, apiKey, baseUrl, messages, params, useProxy: true, stream: true, timeoutMs: LOCAL_REQUEST_TIMEOUT_MS, totalTimeoutMs: LOCAL_REQUEST_TOTAL_MS },
       {}
     );
     if (String((r && r.text) || '').trim()) return { ok: true, error: '' };
@@ -2740,7 +2725,7 @@ export async function preflight(settings = {}) {
   }
   // 再用非流式兜底
   try {
-    const r = await chat({ provider, model, apiKey, baseUrl, messages, params, useProxy: !!settings.useProxy, timeoutMs: 30000, totalTimeoutMs: 45000 });
+    const r = await chat({ provider, model, apiKey, baseUrl, messages, params, useProxy: true, timeoutMs: LOCAL_REQUEST_TIMEOUT_MS, totalTimeoutMs: LOCAL_REQUEST_TOTAL_MS });
     if (String((r && r.text) || '').trim()) return { ok: true, error: '' };
     return { ok: false, error: '模型返回了空内容（可能不支持流式，或 max_tokens 太小被推理占满）' };
   } catch (err) {

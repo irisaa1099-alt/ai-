@@ -1,3 +1,5 @@
+import { LOCAL_MODEL, LOCAL_BASE_URL, LOCAL_REQUEST_TIMEOUT_MS, LOCAL_REQUEST_TOTAL_MS } from './local-model.js';
+import { localInputBudget } from './local-model.js';
 /**
  * core/group.js —— 群聊引擎（"AI 导演"）
  * ---------------------------------------------------------------------------
@@ -27,7 +29,7 @@ import { buildSystemPrompt, matchLore, summarizeIfNeeded } from './prompt.js';
 import { formatRecentExperiences, visibleGroupHistory, RECENT_LIMIT } from './recent.js';
 import { filterMemoryContext } from './memory.js';
 import { getRuntime, detectEmotion } from './runtime.js';
-import { abortController, addUsage, chatStream, estimateCost, PROVIDERS } from './llm.js';
+import { abortController, addUsage, chatStream, estimateCost } from './llm.js';
 import {
   appendGroupMessage,
   getMemory,
@@ -518,7 +520,7 @@ export function buildGroupMessages(opts = {}) {
     recentExperiences: filterMemoryContext(opts.recentExperiences, memory, { charId: speaker.id, recent: true }),
   };
   const runtime = opts.runtime || {};
-  const budget = Math.max(0, Math.floor(num(opts.budgetTokens, num(ctxCfg.budgetTokens, 8000))));
+  const budget = localInputBudget(opts.budgetTokens ?? ctxCfg.budgetTokens);
 
   /* ---------- 人称与成员名单 ---------- */
   const others = members.filter((m) => String(m.id) !== String(speaker.id));
@@ -768,10 +770,8 @@ export class GroupRound {
     this.spoken = [];
     /** 是否被要求停止 */
     this.stopped = false;
-    /** 停止原因：user / no-key / context-budget / error / done / silent */
+    /** 停止原因：user / context-budget / error / done / silent */
     this.reason = '';
-    /** 本轮因为没配 Key 被跳过的角色名（用于判断"是不是整轮都没得说"） */
-    this.noKeySpeakers = [];
     /** @type {AbortController|null} */
     this.controller = null;
     this.running = false;
@@ -854,14 +854,6 @@ export class GroupRound {
       this.controller = null;
     }
 
-    // 本轮名单里**所有人**都缺 Key 时，才算"整轮因缺 Key 结束"（界面据此给总提示）。
-    // 单个角色缺 Key 只跳过 TA（见 speak 里的处理），不能连累其他人。
-    const planned = plan.length;
-    const skippedNoKey = (this.noKeySpeakers || []).length;
-    if (planned > 0 && skippedNoKey >= planned && !this.stopped) {
-      this.reason = 'no-key';
-    }
-
     const summary = {
       turns: this.spoken.length,
       reason: this.stopped ? this.reason || 'user' : this.reason || 'done',
@@ -898,23 +890,10 @@ export class GroupRound {
       }
     };
 
-    // 供应商 / 模型：角色卡可覆盖全局（和一对一私聊一致）
-    const provider = (speaker.model && speaker.model.provider) || settings.provider || 'deepseek';
-    const model = (speaker.model && speaker.model.model) || settings.model || 'deepseek-flash';
-    const apiKey = (settings.apiKeys || {})[provider] || '';
-    const baseUrl = (settings.baseUrls || {})[provider] || '';
-    const meta = PROVIDERS ? PROVIDERS[provider] : null;
-    const needKey = !meta || meta.needKey !== false;
-    if (!settings.useProxy && needKey && !apiKey) {
-      // 只跳过"这一个角色"，不要停掉整轮：群里常常是某一位用了别的供应商而没配 Key，
-      // 以前这里 `stop('no-key')` → 外层 `break`，结果**配置正常的其他角色一句都说不出**，
-      // 用户看到的是"群聊坏了"。只有本轮名单里所有人都缺 Key 时才由 run() 报一次总提示。
-      this.noKeySpeakers = [...(this.noKeySpeakers || []), memberName(speaker)];
-      const err = new Error(`${memberName(speaker)} 没有配置 API Key，这一轮先跳过 TA（设置 → 模型）`);
-      err.code = 'no-key';
-      report(err);
-      return null;
-    }
+    const provider = 'ollama';
+    const model = LOCAL_MODEL;
+    const apiKey = '';
+    const baseUrl = LOCAL_BASE_URL;
 
     let memory = { summary: '', facts: [] };
     let recentExperiences = [];
@@ -981,14 +960,12 @@ export class GroupRound {
           baseUrl,
           messages: built.messages,
           params: paramsFor(speaker, settings),
-          useProxy: !!settings.useProxy,
+          useProxy: true,
           stream: true,
           signal: controller.signal,
-          // 群聊一轮是"串行 N 个角色"，必须比私聊更紧：不传就落回 core/llm.js 的默认值
-          // （120 秒无内容 / 10 分钟总时限），8 个成员最坏能把一轮拖到 80 分钟，
-          // 界面上表现为"某一位正在输入…"卡住、其他角色一句都说不出。
-          timeoutMs: 45000,
-          totalTimeoutMs: 90000,
+          // 给本地冷启动预留首字等待，整次请求仍有上限，可随时停止。
+          timeoutMs: LOCAL_REQUEST_TIMEOUT_MS,
+          totalTimeoutMs: LOCAL_REQUEST_TOTAL_MS,
         },
         {
           onDelta: (delta, full) => {
@@ -1100,7 +1077,7 @@ export class GroupRound {
         at: Date.now(),
         charId: speaker.id,
         groupId: this.group.id,
-        provider: (speaker.model && speaker.model.provider) || this.settings.provider || '',
+        provider: 'ollama',
         model,
         prompt: promptTokens,
         completion: completionTokens,

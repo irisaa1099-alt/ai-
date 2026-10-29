@@ -27,211 +27,17 @@
 
 /**
  * 供应商元数据（契约 3.10）。
- * 顺序即设置面板的下拉顺序：国内直连优先，本地与自定义置后。
+ * 仅公开项目本地模型。
  * @type {Record<string, ProviderMeta>}
  */
+import { LOCAL_MODEL, LOCAL_BASE_MODEL, LOCAL_BASE_URL } from '../core/local-model.js';
+
 export const PROVIDERS_META = {
-  deepseek: {
-    id: 'deepseek',
-    label: 'DeepSeek（深度求索）',
-    kind: 'openai',
-    baseUrl: 'https://api.deepseek.com/v1',
-    models: ['deepseek-flash', 'deepseek-v4-pro'],
-    needKey: true,
-    keyUrl: 'https://platform.deepseek.com/api_keys',
-    keyName: 'DeepSeek API Key',
-    docs: 'https://api-docs.deepseek.com/zh-cn/',
-    note: '国产高性价比模型；Flash 更快更省，V4 Pro 更强。两者均支持思考/非思考模式。'
-  },
-
-  openai: {
-    id: 'openai',
-    label: 'OpenAI',
-    kind: 'openai',
-    baseUrl: 'https://api.openai.com/v1',
-    models: [
-      'gpt-5',
-      'gpt-5-mini',
-      'gpt-5-nano',
-      'gpt-4.1',
-      'gpt-4.1-mini',
-      'gpt-4o',
-      'gpt-4o-mini',
-      'o3',
-      'o4-mini'
-    ],
-    needKey: true,
-    keyUrl: 'https://platform.openai.com/api-keys',
-    keyName: 'OpenAI API Key',
-    docs: 'https://platform.openai.com/docs/api-reference',
-    note: '国内直连通常需要代理；若无法访问可在「自定义」里填写反向代理地址。'
-  },
-
-  moonshot: {
-    id: 'moonshot',
-    label: 'Moonshot（Kimi）',
-    kind: 'openai',
-    baseUrl: 'https://api.moonshot.cn/v1',
-    models: [
-      'kimi-k2-0905-preview',
-      'kimi-k2-turbo-preview',
-      'kimi-latest',
-      'moonshot-v1-128k',
-      'moonshot-v1-32k',
-      'moonshot-v1-8k'
-    ],
-    needKey: true,
-    keyUrl: 'https://platform.moonshot.cn/console/api-keys',
-    keyName: 'Moonshot API Key',
-    docs: 'https://platform.moonshot.cn/docs/api/chat',
-    note: '长上下文友好；moonshot-v1-128k 支持约 12.8 万 token 上下文。'
-  },
-
-  zhipu: {
-    id: 'zhipu',
-    label: '智谱 GLM',
-    kind: 'openai',
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    models: ['glm-4.6', 'glm-4.5', 'glm-4.5-air', 'glm-4-plus', 'glm-4-flashx', 'glm-4-flash'],
-    needKey: true,
-    keyUrl: 'https://bigmodel.cn/usercenter/apikeys',
-    keyName: '智谱 API Key',
-    docs: 'https://docs.bigmodel.cn/',
-    note: 'glm-4-flash 免费额度较大，适合日常闲聊。'
-  },
-
-  qwen: {
-    id: 'qwen',
-    label: '通义千问（DashScope 兼容模式）',
-    kind: 'openai',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    models: [
-      'qwen3-max',
-      'qwen-max',
-      'qwen-plus',
-      'qwen-turbo',
-      'qwen3-235b-a22b',
-      'qwen-long',
-      'qwen-vl-plus'
-    ],
-    needKey: true,
-    keyUrl: 'https://bailian.console.aliyun.com/?apiKey=1',
-    keyName: 'DashScope API Key',
-    docs: 'https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope',
-    note: '使用的是百炼「OpenAI 兼容模式」地址，不是 dashscope 原生 SDK 地址。'
-  },
-
-  siliconflow: {
-    id: 'siliconflow',
-    label: '硅基流动 SiliconFlow',
-    kind: 'openai',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    models: [
-      'deepseek-ai/DeepSeek-V3',
-      'deepseek-ai/DeepSeek-R1',
-      'Qwen/Qwen3-235B-A22B-Instruct-2507',
-      'Qwen/Qwen3-8B',
-      'moonshotai/Kimi-K2-Instruct',
-      'zai-org/GLM-4.5-Air',
-      'THUDM/glm-4-9b-chat'
-    ],
-    needKey: true,
-    keyUrl: 'https://cloud.siliconflow.cn/account/ak',
-    keyName: 'SiliconFlow API Key',
-    docs: 'https://docs.siliconflow.cn/',
-    note: '一个 Key 聚合多家开源模型，模型名需带组织前缀（如 deepseek-ai/）。'
-  },
-
-  openrouter: {
-    id: 'openrouter',
-    label: 'OpenRouter（聚合）',
-    kind: 'openai',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    models: [
-      'openai/gpt-4o-mini',
-      'openai/gpt-4.1-mini',
-      'anthropic/claude-sonnet-4.5',
-      'anthropic/claude-haiku-4.5',
-      'google/gemini-2.5-flash',
-      'deepseek/deepseek-chat',
-      'qwen/qwen3-235b-a22b',
-      'meta-llama/llama-3.3-70b-instruct'
-    ],
-    needKey: true,
-    keyUrl: 'https://openrouter.ai/keys',
-    keyName: 'OpenRouter API Key',
-    docs: 'https://openrouter.ai/docs',
-    note: '一个 Key 访问多家模型，计费为美元结算、按量折算。'
-  },
-
-  anthropic: {
-    id: 'anthropic',
-    label: 'Anthropic（Claude）',
-    kind: 'anthropic',
-    baseUrl: 'https://api.anthropic.com/v1',
-    models: [
-      'claude-sonnet-4-5',
-      'claude-opus-4-1',
-      'claude-haiku-4-5',
-      'claude-3-7-sonnet-latest',
-      'claude-3-5-haiku-latest'
-    ],
-    needKey: true,
-    keyUrl: 'https://console.anthropic.com/settings/keys',
-    keyName: 'Anthropic API Key',
-    docs: 'https://docs.anthropic.com/zh-CN/api/messages',
-    note: '浏览器直连需服务端允许 CORS，本模块已自动附带直连所需请求头。'
-  },
-
-  gemini: {
-    id: 'gemini',
-    label: 'Google Gemini',
-    kind: 'gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
-    needKey: true,
-    keyUrl: 'https://aistudio.google.com/app/apikey',
-    keyName: 'Gemini API Key',
-    docs: 'https://ai.google.dev/gemini-api/docs',
-    note: '系统提示词会以 systemInstruction 字段下发；国内直连通常需要代理。'
-  },
-
   ollama: {
-    id: 'ollama',
-    label: 'Ollama（本地）',
-    kind: 'ollama',
-    baseUrl: 'http://127.0.0.1:11434/v1',
-    models: ['qwen3', 'qwen2.5', 'llama3.2', 'deepseek-r1', 'gemma3', 'mistral'],
-    needKey: false,
-    keyUrl: 'https://ollama.com/download',
-    keyName: '（本地无需密钥）',
-    docs: 'https://docs.ollama.com/api/openai-compatibility',
-    note: '需先执行 ollama serve 并 ollama pull 模型；断网也能用。'
-  },
-
-  lmstudio: {
-    id: 'lmstudio',
-    label: 'LM Studio（本地）',
-    kind: 'openai',
-    baseUrl: 'http://127.0.0.1:1234/v1',
-    models: ['local-model'],
-    needKey: false,
-    keyUrl: 'https://lmstudio.ai/',
-    keyName: '（本地无需密钥）',
-    docs: 'https://lmstudio.ai/docs/local-server',
-    note: '在 LM Studio 中开启 Local Server 后即可连接，模型名以其加载的标识为准。'
-  },
-
-  custom: {
-    id: 'custom',
-    label: '自定义（OpenAI 兼容）',
-    kind: 'openai',
-    baseUrl: '',
-    models: [],
-    needKey: true,
-    keyName: 'API Key',
-    docs: 'https://platform.openai.com/docs/api-reference/chat',
-    note: '填写厂商提供的 OpenAI Chat Completions 兼容接口根地址与模型名；请求会自动追加 /chat/completions，请勿填写完整聊天接口路径。'
+    id: 'ollama', label: '本地模型 · Ollama', kind: 'ollama',
+    baseUrl: LOCAL_BASE_URL, models: [LOCAL_MODEL], needKey: false,
+    docs: 'https://docs.ollama.com/',
+    note: '仅使用项目内的 Qwen3 4B 模型，无需 API Key。'
   }
 };
 
@@ -246,14 +52,14 @@ export const CHAT_MODELS = Object.keys(PROVIDERS_META).reduce((acc, id) => {
 }, /** @type {Record<string, string[]>} */ ({}));
 
 /**
- * 由 id 取供应商元数据；未知 id 返回 custom 的副本（保证调用方不会拿到 undefined）。
+ * 由 id 取供应商元数据；旧供应商 id 返回本地配置的副本（保证调用方不会拿到 undefined）。
  * @param {string} id
  * @returns {ProviderMeta}
  */
 export function getProvider(id) {
   const meta = PROVIDERS_META[id];
   if (meta) return meta;
-  return Object.assign({}, PROVIDERS_META.custom);
+  return { ...PROVIDERS_META.ollama };
 }
 
 /**
@@ -322,7 +128,7 @@ export const PARAM_HINTS = {
     min: 64,
     max: 8192,
     step: 64,
-    desc: '单条回复的 token 上限（约等于汉字数），越长越贵也越慢。'
+    desc: '单条回复的 token 上限；越长通常生成越慢，并占用更多本机资源。'
   },
   presencePenalty: {
     label: '话题新鲜度',

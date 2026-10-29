@@ -1,0 +1,16 @@
+[
+  {
+    "archive": "ollama-windows-amd64.zip",
+    "sha256": "7afa38624fa62ee5d8293422d0ab084c1bb4603134c7f4dafce11a033b57cc19",
+    "source": "https://github.com/ollama/ollama/releases/download/v0.40.13/ollama-windows-amd64.zip",
+    "destination": "runtime/ollama/win32-x64",
+    "verified": true
+  },
+  {
+    "archive": "node-v24.22.2-win-x64.zip",
+    "sha256": "ca1bff5d8ead13c9f2ea404a176db46bd430704d5b5113734049fa365e7799e2",
+    "source": "https://nodejs.org/dist/v24.22.2/node-v24.22.2-win-x64.zip",
+    "destination": "runtime/node/win32-x64",
+    "verified": true
+  }
+]

@@ -5,23 +5,15 @@
  * 两个职责：
  *   1. 托管 app/ 目录下的静态文件（原生 ES Module 需要 http:// 才能加载；
  *      同时也满足麦克风等 API 对 secure context 的要求，127.0.0.1/localhost 视为安全来源）。
- *   2. 可选的 /api/llm 与 /api/tts 代理：把 API Key 留在服务器上，浏览器不接触密钥，
- *      顺带解决浏览器直连第三方接口可能遇到的 CORS 问题。
+ *   2. /api/llm 固定调用项目内的 Qwen3；/api/tts 云语音已停用。
  *
- * 用法：
- *   node server.mjs                    # http://127.0.0.1:5180
- *   node server.mjs --port 8080        # 指定端口
- *   node server.mjs --host 0.0.0.0     # 允许局域网访问（手机测试）
- *   node server.mjs --no-open          # 不自动打开浏览器
- *
- * 配置密钥（任选其一）：
- *   · 项目根目录（app/ 的上一级）放置 .env 文件，内容形如：
- *       DEEPSEEK_API_KEY=sk-xxxx
- *       OPENAI_API_KEY=sk-xxxx
- *       AICHAT_PROXY_TOKEN=自定口令        # 可选，防止他人借用你的代理
- *   · 或者直接用环境变量启动：DEEPSEEK_API_KEY=sk-xxx node server.mjs
+ * 推荐：node local-start.mjs（同时准备模型并启动网站）。
+ * node server.mjs 只启动网站；仅在项目模型服务已启动时单独使用。
+ * 支持 --port 8080、--host 0.0.0.0、--no-open。
+ * 局域网访问需在 app/.env 设置 AICHAT_PROXY_TOKEN；无需模型 API Key。
  */
 
+import { LOCAL_MODEL, LOCAL_BASE_URL, localOutputTokens, localContextError } from './core/local-model.js';
 import { applyChanges, validateBackup } from './core/sync.js';
 import { mergeEntity } from './core/entity-sync.js';
 import http from 'node:http';
@@ -100,100 +92,16 @@ function loadEnvFile() {
   }
 }
 
-/** provider → 环境变量名前缀 */
-const PROVIDER_ENV = {
-  deepseek: 'DEEPSEEK',
-  openai: 'OPENAI',
-  moonshot: 'MOONSHOT',
-  zhipu: 'ZHIPU',
-  qwen: 'DASHSCOPE',
-  siliconflow: 'SILICONFLOW',
-  openrouter: 'OPENROUTER',
-  anthropic: 'ANTHROPIC',
-  gemini: 'GEMINI',
-  ollama: 'OLLAMA',
-  lmstudio: 'LMSTUDIO',
-  custom: 'CUSTOM',
-  default: 'AICHAT',
-};
-
-/**
- * 取某供应商的密钥：先看 <PREFIX>_API_KEY，再看 AICHAT_API_KEYS（形如 deepseek:sk-1,openai:sk-2）
- */
-function keyFor(provider, slot) {
-  const p = String(provider || 'default');
-  if (slot && slot !== 'default') {
-    const v = (process.env[`${PROVIDER_ENV[slot] || slot.toUpperCase()}_API_KEY`] || '').trim()
-      || (process.env[`AICHAT_KEY_${slot.toUpperCase()}`] || '').trim();
-    if (v) return v;
-  }
-  const direct = (process.env[`${PROVIDER_ENV[p] || p.toUpperCase()}_API_KEY`] || '').trim();
-  if (direct) return direct;
-  const multi = process.env.AICHAT_API_KEYS;
-  if (multi) {
-    for (const pair of multi.split(',')) {
-      const [k, ...rest] = pair.split(':');
-      if (k && k.trim() === p && rest.join(':').trim()) return rest.join(':').trim();
-    }
-  }
-  return (process.env.AICHAT_API_KEY || '').trim();
-}
-
 const PROXY_TOKEN = process.env.AICHAT_PROXY_TOKEN || '';
 
-/**
- * 允许客户端指定的上游地址前缀（可选，逗号分隔）。
- *
- * 为什么需要："自定义反代地址"是正常功能（`settings.baseUrls[provider]` 会随请求发上来），
- * 但服务端一旦接受请求体里的 `baseUrl`，就等于允许调用方**让服务器带着自己的 API Key
- * 去请求任意地址**（把 Key 送去攻击者的服务器）。现在的约束是：
- *   1. 只有本机（或口令正确的）请求才能走到代理接口 —— 见 guardApi()/guardRemote()；
- *   2. 设置了本变量时，客户端给的 `baseUrl` 还必须落在这些前缀里，否则拒绝。
- * 例：AICHAT_ALLOWED_UPSTREAMS=http://127.0.0.1:8000/v1,https://my-relay.example.com/v1
- * @type {string[]}
- */
-const ALLOWED_UPSTREAMS = String(process.env.AICHAT_ALLOWED_UPSTREAMS || '')
-  .split(',')
-  .map((s) => s.trim().replace(/\/+$/, ''))
-  .filter(Boolean);
-
-/**
- * 校验客户端指定的上游地址（/api/llm 与 /api/tts 共用）。
- * 密钥与地址的绑定关系是"同一个 provider"：`keyFor(provider)` 只会取该供应商自己的凭据。
- * @param {string} baseUrl 客户端给的地址（可为空 = 用该供应商的默认地址）
- * @returns {{ok: boolean, base: string, error?: string}}
- */
+/** 接口地址由项目固定，浏览器不能把模型请求转到其他地址。 */
 function checkUpstreamOverride(baseUrl) {
   const base = String(baseUrl || '').trim().replace(/\/+$/, '');
-  if (!base) return { ok: true, base: '' };
-  if (!/^https?:\/\//i.test(base)) {
-    return { ok: false, base: '', error: `上游地址必须以 http:// 或 https:// 开头：${base.slice(0, 80)}` };
-  }
-  if (ALLOWED_UPSTREAMS.length && !ALLOWED_UPSTREAMS.some((p) => base === p || base.startsWith(p + '/'))) {
-    return {
-      ok: false,
-      base: '',
-      error: `上游地址不在允许列表内（AICHAT_ALLOWED_UPSTREAMS）：${base.slice(0, 80)}`,
-    };
-  }
-  return { ok: true, base };
+  if (base && base !== LOCAL_BASE_URL) return { ok: false, error: '仅允许项目内的本地模型接口' };
+  return { ok: true, base: LOCAL_BASE_URL };
 }
 
-/** 上游协议与默认地址（与 data/models.js 保持一致） */
-const UPSTREAM = {
-  deepseek: { kind: 'openai', baseUrl: 'https://api.deepseek.com/v1' },
-  openai: { kind: 'openai', baseUrl: 'https://api.openai.com/v1' },
-  moonshot: { kind: 'openai', baseUrl: 'https://api.moonshot.cn/v1' },
-  zhipu: { kind: 'openai', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
-  qwen: { kind: 'openai', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
-  siliconflow: { kind: 'openai', baseUrl: 'https://api.siliconflow.cn/v1' },
-  openrouter: { kind: 'openai', baseUrl: 'https://openrouter.ai/api/v1' },
-  anthropic: { kind: 'anthropic', baseUrl: 'https://api.anthropic.com/v1' },
-  gemini: { kind: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
-  ollama: { kind: 'openai', baseUrl: 'http://127.0.0.1:11434/v1' },
-  lmstudio: { kind: 'openai', baseUrl: 'http://127.0.0.1:1234/v1' },
-  custom: { kind: 'openai', baseUrl: '' },
-};
+const UPSTREAM = { ollama: { kind: 'openai', baseUrl: LOCAL_BASE_URL } };
 
 /* ------------------------------------------------------------------ *
  * 静态文件服务
@@ -368,71 +276,14 @@ function json(res, status, obj) {
 }
 
 /** 把前端的 messages/params 转成各家协议的上游请求 */
-function buildUpstream(provider, model, messages, params, key, baseUrlOverride, stream) {
-  const meta = UPSTREAM[provider] || UPSTREAM.custom;
-  const base = (baseUrlOverride || meta.baseUrl || '').replace(/\/+$/, '');
-  const kind = meta.kind;
-  const headers = { 'Content-Type': 'application/json' };
-  let url = '';
-  let body = {};
-
-  if (kind === 'openai') {
-    if (!base) throw new Error(`未配置 ${provider} 的接口地址`);
-    url = `${base}/chat/completions`;
-    if (key) headers.Authorization = `Bearer ${key}`;
-    body = {
-      model,
-      messages,
-      stream,
-      temperature: params.temperature,
-      top_p: params.topP,
-      max_tokens: params.maxTokens,
-      presence_penalty: params.presencePenalty,
-      frequency_penalty: params.frequencyPenalty,
-    };
-    // DeepSeek 的思考开关是 Chat Completions 顶层字段。只对官方 DeepSeek
-    // provider 下发，避免其他 OpenAI 兼容服务因未知字段拒绝请求。
-    if (provider === 'deepseek' && typeof params.thinking === 'boolean') {
-      body.thinking = { type: params.thinking ? 'enabled' : 'disabled' };
-    }
-    if (provider === 'openrouter') {
-      headers['HTTP-Referer'] = 'http://localhost';
-      // HTTP 请求头值不能含中文，否则 Node fetch 在发出请求前就会拒绝。
-      headers['X-Title'] = 'AI Chat';
-    }
-  } else if (kind === 'anthropic') {
-    if (!base) throw new Error('未配置 anthropic 接口地址');
-    url = `${base}/messages`;
-    headers['x-api-key'] = key;
-    headers['anthropic-version'] = '2023-06-01';
-    const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
-    body = {
-      model,
-      max_tokens: params.maxTokens || 1024,
-      temperature: params.temperature,
-      top_p: params.topP,
-      stream,
-      messages: messages.filter((m) => m.role !== 'system').map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
-    };
-    if (system) body.system = system;
-  } else if (kind === 'gemini') {
-    if (!base) throw new Error('未配置 gemini 接口地址');
-    const method = stream ? 'streamGenerateContent' : 'generateContent';
-    url = `${base}/models/${encodeURIComponent(model)}:${method}${stream ? '?alt=sse&' : '?'}key=${encodeURIComponent(key)}`;
-    const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
-    body = {
-      contents: messages
-        .filter((m) => m.role !== 'system')
-        .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-      generationConfig: {
-        temperature: params.temperature,
-        topP: params.topP,
-        maxOutputTokens: params.maxTokens,
-      },
-    };
-    if (system) body.systemInstruction = { parts: [{ text: system }] };
-  }
-  return { url, headers, body };
+function buildUpstream(_provider, _model, messages, params, _key, _base, stream) {
+  return {
+    url: `${LOCAL_BASE_URL}/chat/completions`,
+    headers: { 'Content-Type': 'application/json' },
+    body: { model: LOCAL_MODEL, messages, stream,
+      temperature: params.temperature, top_p: params.topP, max_tokens: localOutputTokens(params.maxTokens),
+      presence_penalty: params.presencePenalty, frequency_penalty: params.frequencyPenalty }
+  };
 }
 
 /** 把各家 SSE 统一成 OpenAI 风格的 data: {"choices":[{"delta":{"content":"..."}}]} */
@@ -633,27 +484,21 @@ async function handleLLM(req, res) {
     json(res, err && err.tooLarge ? 413 : 400, { error: { message: `请求体解析失败：${err.message}` } });
     return;
   }
-  const { provider = 'deepseek', model = '', messages = [], params = {}, stream = false, keySlot = 'default', baseUrl = '' } = payload;
-  const key = keyFor(provider, keySlot);
-  const meta = UPSTREAM[provider] || UPSTREAM.custom;
-  if (provider !== 'ollama' && provider !== 'lmstudio' && !key) {
-    json(res, 400, {
-      error: {
-        message: `服务器上没有配置 ${provider} 的 API Key。请在 .env 中写入 ${PROVIDER_ENV[provider] || provider.toUpperCase()}_API_KEY=sk-xxx 后重启，或在设置里关闭"服务器代理"改用浏览器直连。`,
-      },
-    });
-    return;
+  const { provider = 'ollama', model = LOCAL_MODEL, messages = [], params = {}, stream = false, keySlot = 'default', baseUrl = '' } = payload;
+  if (provider !== 'ollama' || model !== LOCAL_MODEL) {
+    return json(res, 400, { error: { message: '此版本只支持项目内的本地 Qwen3 模型', code: 'local-model-only' } });
   }
-  if (!model) {
-    json(res, 400, { error: { message: '缺少 model 参数' } });
-    return;
-  }
+  const key = '';
+  const meta = UPSTREAM.ollama;
   // 客户端指定的上游地址必须先过校验：否则等于"让服务器带着自己的 Key 去请求任意地址"
   const override = checkUpstreamOverride(baseUrl);
   if (!override.ok) {
     json(res, 403, { error: { message: override.error, code: 'upstream-not-allowed' } });
     return;
   }
+
+  const contextError = localContextError(messages, params?.maxTokens);
+  if (contextError) return json(res, 400, { error: { message: contextError, code: 'context-budget' } });
 
   let up;
   try {
@@ -671,15 +516,17 @@ async function handleLLM(req, res) {
   // 首字节看门狗：上游"连上了但不回"时不能无限等（见文件顶部 UPSTREAM_FIRST_BYTE_MS 的说明）。
   // 拿到响应头之后立刻清掉，后续由流式的空闲看门狗接手。
   const firstByte = new AbortController();
+  const firstByteMs = provider === 'ollama' ? 120_000 : UPSTREAM_FIRST_BYTE_MS;
   const firstByteTimer = setTimeout(() => {
     try {
       firstByte.abort(new Error('first-byte-timeout'));
     } catch {
       firstByte.abort();
     }
-  }, UPSTREAM_FIRST_BYTE_MS);
+  }, firstByteMs);
   try {
     upstream = await fetch(up.url, {
+      redirect: 'error',
       method: 'POST',
       headers: up.headers,
       body: JSON.stringify(up.body),
@@ -691,12 +538,12 @@ async function handleLLM(req, res) {
     if (firstByte.signal.aborted) {
       json(res, 504, {
         error: {
-          message: `上游接口 ${Math.round(UPSTREAM_FIRST_BYTE_MS / 1000)} 秒内没有响应（地址：${safeUpstreamLabel(up.url)}）。请检查该中转/接口是否可用，或换一个供应商。`,
+          message: `上游接口 ${Math.round(firstByteMs / 1000)} 秒内没有响应（地址：${safeUpstreamLabel(up.url)}）。${provider === 'ollama' ? '请确认本地模型已准备完成，或缩短上下文后重试。' : '请检查该中转/接口是否可用，或换一个供应商。'}`,
         },
       });
       return;
     }
-    json(res, 502, { error: { message: `连接上游接口失败：${err.message}（若是本地模型，请确认 ollama/LM Studio 已启动）` } });
+    json(res, 502, { error: { message: `无法连接项目本地模型：${err.message}。请运行项目启动脚本，并检查启动窗口中的报错` } });
     return;
   } finally {
     clearTimeout(firstByteTimer);
@@ -847,31 +694,20 @@ async function handleModels(req, res) {
   } catch (err) {
     return json(res, err && err.tooLarge ? 413 : 400, { error: { message: `请求体解析失败：${err.message}` } });
   }
-  const provider = String(payload.provider || '');
+  const provider = String(payload.provider || 'ollama');
   if (!Object.hasOwn(UPSTREAM, provider)) {
-    return json(res, 400, { error: { message: '未知的模型供应商' } });
+    return json(res, 400, { error: { message: '此版本只支持项目内的本地模型' } });
   }
   const override = checkUpstreamOverride(payload.baseUrl);
   if (!override.ok) return json(res, 403, { error: { message: override.error } });
   const meta = UPSTREAM[provider];
   const base = String(override.base || meta.baseUrl || '').replace(/\/+$/, '');
   if (!base) return json(res, 400, { error: { message: '未配置模型接口地址' } });
-  const key = keyFor(provider, payload.keySlot || 'default');
-  if (provider !== 'ollama' && provider !== 'lmstudio' && !key) {
-    return json(res, 400, { error: { message: `${provider} 的服务器 API Key 未配置` } });
-  }
   const headers = {};
-  let url = `${base}/models`;
-  if (meta.kind === 'anthropic') {
-    headers['x-api-key'] = key;
-    headers['anthropic-version'] = '2023-06-01';
-  } else if (meta.kind === 'gemini') {
-    url += `?key=${encodeURIComponent(key)}`;
-  } else if (key) {
-    headers.Authorization = `Bearer ${key}`;
-  }
+  const url = `${base}/models`;
   try {
     const upstream = await fetch(url, {
+      redirect: 'error',
       method: 'GET',
       headers,
       signal: AbortSignal.timeout(15000),
@@ -884,7 +720,7 @@ async function handleModels(req, res) {
     const models = Array.from(new Set(rows.map((item) =>
       typeof item === 'string' ? item : String(item?.id || item?.name || item?.model || '').replace(/^models\//, '')
     ).filter(Boolean)));
-    return json(res, 200, { ok: true, models });
+    return json(res, 200, { ok: true, models: models.filter((name) => name === LOCAL_MODEL) });
   } catch (err) {
     return json(res, 502, { error: { message: `获取模型列表失败：${err.message}` } });
   }
@@ -893,82 +729,6 @@ async function handleModels(req, res) {
 /* ------------------------------------------------------------------ *
  * 代理：/api/tts（可选，OpenAI 兼容语音合成）
  * ------------------------------------------------------------------ */
-
-async function handleTTS(req, res) {
-  let payload;
-  try {
-    payload = JSON.parse(await readBody(req, 1024 * 1024));
-  } catch (err) {
-    json(res, err && err.tooLarge ? 413 : 400, { error: { message: `请求体解析失败：${err.message}` } });
-    return;
-  }
-  const {
-    text = '', voice = 'alloy', model = 'gpt-4o-mini-tts', rate = 1,
-    provider = 'openai', baseUrl = '', keySlot = 'default',
-  } = payload;
-  if (!text) {
-    json(res, 400, { error: { message: '缺少 text' } });
-    return;
-  }
-  const p = String(provider || 'openai');
-  const key = keyFor(p, keySlot);
-  // 地址优先级：客户端选中的那个供应商的自定义地址 → 该供应商的默认地址。
-  // 以前这里写死 `UPSTREAM[provider]?.baseUrl || 'https://api.openai.com/v1'`，
-  // 于是"设置里选了 Qwen / 填了自建地址"在代理模式下会被悄悄改成 OpenAI —— 请求打到了错误的服务商。
-  // 客户端给的地址同样要先过校验（见 checkUpstreamOverride），
-  // 否则服务器会带着自己的语音 Key 去请求调用方指定的任意地址。
-  const override = checkUpstreamOverride(baseUrl);
-  if (!override.ok) {
-    json(res, 403, { error: { message: override.error, code: 'upstream-not-allowed' } });
-    return;
-  }
-  const base = String(override.base || (UPSTREAM[p] && UPSTREAM[p].baseUrl) || '').replace(/\/+$/, '');
-  if (!base) {
-    json(res, 400, {
-      error: { message: `没有可用的语音接口地址：请为「${p}」填写自定义接口地址（设置 → 语音 / 模型），或改用浏览器直连。` },
-    });
-    return;
-  }
-  // 与 /api/llm 保持一致：本地服务（ollama / LM Studio）不需要密钥
-  const localKind = p === 'ollama' || p === 'lmstudio';
-  if (!localKind && !key) {
-    json(res, 400, {
-      error: {
-        message: `服务器上没有配置 ${p} 的语音 API Key（.env 里写 ${PROVIDER_ENV[p] || p.toUpperCase()}_API_KEY=sk-xxx，或 AICHAT_API_KEYS=${p}:sk-xxx）。`,
-      },
-    });
-    return;
-  }
-  const headers = { 'Content-Type': 'application/json' };
-  if (key) headers.Authorization = `Bearer ${key}`;
-  const controller = new AbortController();
-  const cancel = () => { if (!res.writableEnded) controller.abort(); };
-  req.on('aborted', cancel);
-  res.on('close', cancel);
-  const timer = setTimeout(() => controller.abort(new Error('语音合成超时')), 15000);
-  try {
-    const upstream = await fetch(`${base}/audio/speech`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers,
-      body: JSON.stringify({ model, input: text, voice, speed: rate, response_format: 'mp3' }),
-    });
-    if (!upstream.ok) {
-      const t = await upstream.text().catch(() => '');
-      json(res, upstream.status, { error: { message: `TTS 上游 ${upstream.status}：${t.slice(0, 300)}` } });
-      return;
-    }
-    const buf = Buffer.from(await upstream.arrayBuffer());
-    res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': String(buf.length) });
-    res.end(buf);
-  } catch (err) {
-    if (!res.destroyed) json(res, 502, { error: { message: `TTS 请求失败：${err.message}` } });
-  } finally {
-    clearTimeout(timer);
-    req.off('aborted', cancel);
-    res.off('close', cancel);
-  }
-}
 
 /* ------------------------------------------------------------------ *
  * 本地文件存储层：把角色 / 聊天记录 / 记忆落到电脑本地的 JSON 文件
@@ -1696,7 +1456,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.startsWith('/api/tts')) {
       if (req.method !== 'POST') return json(res, 405, { error: { message: '请用 POST' } });
-      return await handleTTS(req, res);
+      return json(res, 400, { error: { message: '本地版本不提供云端语音，请使用系统语音。' } });
     }
     if (url.startsWith('/api/db')) {
       const pathname = url.split('?')[0];
@@ -1818,7 +1578,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         root: ROOT,
         dataDir: DATA_DIR,
-        providers: Object.keys(UPSTREAM).filter((p) => Boolean(keyFor(p))),
+        providers: ['ollama'], localOnly: true,
         tokenRequired: Boolean(PROXY_TOKEN),
       });
     }
@@ -1875,8 +1635,7 @@ server.listen(PORT, HOST, () => {
     console.log('  🔒  为保护数据与密钥，非本机的接口请求会被拒绝；如需手机/局域网访问，');
     console.log('      请在 app/.env 里设置 AICHAT_PROXY_TOKEN=自定义口令 后重启。');
   }
-  const ready = Object.keys(UPSTREAM).filter((p) => Boolean(keyFor(p)));
-  console.log(`  🔑  服务器已配置密钥的供应商：${ready.length ? ready.join(', ') : '（无，可在浏览器内直连或填 .env）'}`);
+  console.log('  🖥️  仅本地 Qwen3 模型 · 无需 API Key');
   console.log(`  💾  角色与聊天记录保存目录：${DATA_DIR}`);
   console.log('  ⏹   Ctrl+C 停止');
   console.log('');

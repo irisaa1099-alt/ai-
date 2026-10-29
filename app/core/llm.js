@@ -1,3 +1,4 @@
+import { LOCAL_MODEL, LOCAL_BASE_URL, localOutputTokens, localContextError } from './local-model.js';
 /**
  * core/llm.js
  * ---------------------------------------------------------------------------
@@ -46,7 +47,7 @@ const PROXY_ENDPOINT = '/api/llm';
 /** 默认最大生成 token（Anthropic 的 max_tokens 为必填） */
 const DEFAULT_MAX_TOKENS = 1024;
 /** 代理未启动时的统一提示 */
-const PROXY_HINT = '后端代理未启动，请运行 node server.mjs，或在设置中关闭代理模式';
+const PROXY_HINT = '无法连接本地网站服务，请重新运行项目的启动脚本，等待启动完成后刷新页面';
 
 /* ===========================================================================
  * 小工具
@@ -252,18 +253,20 @@ export const llmErrors = {
     if (!err) return '请求失败，请稍后重试';
     // 代理模式特有的提示优先
     if (err.proxy) return PROXY_HINT;
-    // 代理已连通、但服务器上没有可用的密钥（server.mjs 的 .env 未配置）
+    // 401/403 也可能是来源校验或访问口令失败，不能一概归因于模型密钥。
     if (err.viaProxy && (err.code === 'auth' || err.status === 401 || err.status === 403)) {
-      return '服务器代理未配置或用错了 API Key：请在 app/.env 中填写对应供应商的 API_KEY 后重启 node server.mjs，或在设置中关闭代理模式';
+      const detail = err.serverMessage || err.message || '请刷新页面后重试';
+      return `本地服务拒绝请求（HTTP ${err.status || 401}）：${detail}`;
     }
+    if (err.viaProxy && err.serverMessage) return `本地模型请求失败：${err.serverMessage}`;
     const code = err.code || (err.status ? classifyStatus(err.status) : 'unknown');
     switch (code) {
       case 'auth':
-        return 'API Key 无效或未配置，请到「设置 → 模型」检查';
+        return '本地服务访问验证失败，请检查「设置 → 模型」中的网站访问口令';
       case 'network':
-        return '网络连接失败，请检查网络或代理设置后重试';
+        return '无法连接本地模型服务，请检查项目启动窗口中的错误信息';
       case 'rate':
-        return '请求过于频繁或额度不足，请稍后再试';
+        return '本地模型繁忙，请稍后再试';
       case 'timeout':
         return '请求超时，模型长时间没有响应，请重试或换用更快的模型';
       case 'server':
@@ -385,7 +388,7 @@ function normParams(params) {
   return {
     temperature: num(p.temperature !== undefined ? p.temperature : p.temp, 0.85),
     topP: num(p.topP !== undefined ? p.topP : p.top_p, 1),
-    maxTokens: Math.max(1, Math.round(num(p.maxTokens !== undefined ? p.maxTokens : p.max_tokens, DEFAULT_MAX_TOKENS))),
+    maxTokens: localOutputTokens(p.maxTokens !== undefined ? p.maxTokens : p.max_tokens),
     presencePenalty: num(p.presencePenalty !== undefined ? p.presencePenalty : p.presence_penalty, 0),
     frequencyPenalty: num(p.frequencyPenalty !== undefined ? p.frequencyPenalty : p.frequency_penalty, 0),
     // DeepSeek 专用的请求级开关。null 表示不干预模型默认行为；仅在
@@ -906,25 +909,13 @@ async function readSSE(res, onEvent, opts) {
  */
 async function resolveConfig(opts) {
   const o = opts || {};
-  const provider = typeof o.provider === 'string' && o.provider ? o.provider : 'deepseek';
+  const provider = 'ollama';
   const meta = getProvider(provider);
-  const kind = meta.kind || 'openai';
-
-  const customBase = typeof o.baseUrl === 'string' && o.baseUrl.trim() ? o.baseUrl.trim() : '';
-  const baseUrl = (customBase || meta.baseUrl || '').replace(/\/+$/, '');
-
-  const requestedModel =
-    typeof o.model === 'string' && o.model.trim()
-      ? o.model.trim()
-      : (meta.models && meta.models[0]) || '';
+  const kind = meta.kind;
+  const customBase = '';
+  const baseUrl = LOCAL_BASE_URL;
+  const model = LOCAL_MODEL;
   const params = normParams(o.params);
-  let model = requestedModel;
-  // 2026-07 后 DeepSeek 的 deepseek-chat / deepseek-reasoner 旧名停用。为已保存的
-  // 全局设置和角色独立模型做请求时兼容，并保留旧名原本的思考语义。
-  if (provider === 'deepseek' && (model === 'deepseek-chat' || model === 'deepseek-reasoner')) {
-    if (params.thinking === null) params.thinking = model === 'deepseek-reasoner';
-    model = 'deepseek-flash';
-  }
 
   const cfg = {
     provider,
@@ -934,14 +925,16 @@ async function resolveConfig(opts) {
     baseUrl,
     // 代理只应收到用户显式填写的覆盖地址；默认地址由服务端自行选择。
     customBaseUrl: customBase,
-    apiKey: typeof o.apiKey === 'string' ? o.apiKey.trim() : '',
+    apiKey: '',
     messages: normMessages(o.messages),
     params,
-    useProxy: !!o.useProxy,
+    useProxy: true,
     // 代理模式：keySlot 用于指定服务器上读取哪一份密钥；proxyToken 对应 server.mjs 的 AICHAT_PROXY_TOKEN
     keySlot: typeof o.keySlot === 'string' && o.keySlot ? o.keySlot : provider,
     proxyToken: typeof o.proxyToken === 'string' ? o.proxyToken : ''
   };
+  const contextError = localContextError(cfg.messages, cfg.params.maxTokens);
+  if (contextError) throw makeError(contextError, 'context-budget', 400);
   return fillProxyDefaults(cfg);
 }
 
@@ -950,21 +943,12 @@ async function resolveConfig(opts) {
  * 这里从全局设置里补一次，避免用户明明在设置里填了口令却不生效。
  * 用惰性 import，避免与 core/store.js 形成加载期强耦合。
  * ------------------------------------------------------------------------- */
-let settingsFallbackPromise = null;
-let settingsFallbackAt = 0;
-/** 缓存有效期：口令/密钥槽可能被用户在设置里改掉，不能永久缓存（否则一直 401，只能刷新页面） */
-const SETTINGS_FALLBACK_TTL = 5000;
-
-/** @returns {Promise<object>} */
-function loadSettingsForFallback() {
-  const stale = Date.now() - settingsFallbackAt > SETTINGS_FALLBACK_TTL;
-  if (!settingsFallbackPromise || stale) {
-    settingsFallbackAt = Date.now();
-    settingsFallbackPromise = import('./store.js')
-      .then((m) => (typeof m.getSettings === 'function' ? m.getSettings() : {}))
-      .catch(() => ({}));
-  }
-  return settingsFallbackPromise;
+/** 每次取当前设置，避免用户刚更新网站口令时仍复用旧口令。 */
+async function loadSettingsForFallback() {
+  try {
+    const store = await import('./store.js');
+    return typeof store.getSettings === 'function' ? store.getSettings() : {};
+  } catch { return {}; }
 }
 
 /**
@@ -1095,6 +1079,7 @@ async function fetchOnce(plan, ctx) {
     throw makeError(`${code.toUpperCase()} ${res.status}${suffix}${detail}`, code, res.status, {
       retryable: isRetryable({ code }),
       viaProxy: ctx.useProxy,
+      serverMessage: info.message,
       raw: info.body
     });
   }
@@ -1522,83 +1507,26 @@ export async function chatStream(opts, handlers) {
  * @param {string} [baseUrl]
  * @returns {Promise<string[]>}
  */
-export async function listModels(provider, apiKey, baseUrl, options = {}) {
-  const meta = getProvider(provider);
-  const builtin = Array.isArray(CHAT_MODELS[provider]) ? CHAT_MODELS[provider].slice() : [];
-  const kind = meta.kind || 'openai';
-  const base = String(baseUrl || meta.baseUrl || '').replace(/\/+$/, '');
-  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
-
-  if (options.useProxy) {
-    try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (options.proxyToken) headers['X-Aichat-Token'] = String(options.proxyToken);
-      const res = await fetch('/api/models', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ provider, baseUrl: String(baseUrl || '').trim(), keySlot: options.keySlot || 'default' }),
-        signal: typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-          ? AbortSignal.timeout(15000)
-          : undefined,
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return Array.isArray(data.models) ? data.models.map(String).filter(Boolean) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  /** 按协议给出兜底列表 */
-  const fallback = () => (kind === 'anthropic' || kind === 'gemini' ? builtin : []);
-
-  if (!base) return fallback();
-
-  let timer = null;
-  let ctl = null;
+export async function listModels(_provider, _apiKey, _baseUrl, options = {}) {
+  const cfg = await fillProxyDefaults({ useProxy: true, provider: 'ollama', keySlot: 'ollama', proxyToken: options.proxyToken || '' });
+  const headers = { 'Content-Type': 'application/json' };
+  if (cfg.proxyToken) headers['X-Aichat-Token'] = cfg.proxyToken;
+  let res;
   try {
-    let url = `${base}/models`;
-    const headers = {};
-    if (kind === 'gemini') {
-      if (!key) return builtin;
-      url += `?key=${encodeURIComponent(key)}`;
-    } else if (kind === 'anthropic') {
-      if (!key) return builtin;
-      headers['x-api-key'] = key;
-      headers['anthropic-version'] = '2023-06-01';
-      headers['anthropic-dangerous-direct-browser-access'] = 'true';
-    } else if (key) {
-      headers.Authorization = `Bearer ${key}`;
-    }
-
-    ctl = new AbortController();
-    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-      ? AbortSignal.timeout(15000)
-      : ctl.signal;
-    if (signal === ctl.signal) {
-      timer = setTimeout(() => ctl.abort(), 15000);
-      if (timer && typeof timer.unref === 'function') timer.unref();
-    }
-
-    const res = await fetch(url, { method: 'GET', headers, signal });
-    if (!res.ok) return fallback();
-
-    const data = await res.json();
-    const arr = Array.isArray(data) ? data : Array.isArray(data && data.data) ? data.data : Array.isArray(data && data.models) ? data.models : [];
-    const list = arr
-      .map((it) => {
-        if (typeof it === 'string') return it;
-        if (!it || typeof it !== 'object') return '';
-        const id = it.id || it.name || it.model || '';
-        return String(id).replace(/^models\//, '');
-      })
-      .filter(Boolean);
-    return list.length ? Array.from(new Set(list)) : fallback();
-  } catch {
-    return fallback();
-  } finally {
-    if (timer) clearTimeout(timer);
+    res = await fetch('/api/models', {
+      method: 'POST', headers, body: JSON.stringify({ provider: 'ollama' }),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (cause) {
+    throw makeError('无法连接本地模型列表服务', cause?.name === 'TimeoutError' ? 'timeout' : 'network', 0, { cause, proxy: cause?.name !== 'TimeoutError' });
   }
+  if (!res.ok) {
+    const info = await readErrorInfo(res);
+    throw makeError(info.message, classifyStatus(res.status), res.status, { viaProxy: true, serverMessage: info.message });
+  }
+  const data = await res.json();
+  if (!Array.isArray(data.models)) throw makeError('本地模型列表响应格式不正确', 'server', 502);
+  return data.models.filter((name) => name === LOCAL_MODEL);
 }
 
 /* ===========================================================================
@@ -1660,6 +1588,8 @@ function findPricing(model) {
  * @returns {number} 元，保留 6 位小数
  */
 export function estimateCost(provider, model, usage) {
+  // 本地推理不产生供应商 token 账单（不估算电费/硬件成本）。
+  if (provider === 'ollama' || provider === 'lmstudio') return 0;
   const price = findPricing(model);
   if (!price) return 0;
   const u = usage || {};

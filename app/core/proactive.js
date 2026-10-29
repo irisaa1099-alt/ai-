@@ -1,3 +1,4 @@
+import { LOCAL_MODEL, LOCAL_BASE_URL, LOCAL_REQUEST_TIMEOUT_MS, LOCAL_REQUEST_TOTAL_MS } from './local-model.js';
 /**
  * 角色主动性（契约 3.15）：久未联系时，角色会主动发来一条消息。
  * 对应《功能脑暴与规划》第九节的"杀手锏 1：时间感知 + 角色主动性"。
@@ -150,21 +151,20 @@ export async function maybeTrigger(char, ctx, { manual = false } = {}) {
     if (!valid()) return false;
     const res = await chatStream(
       {
-        provider: char.model?.provider || settings.provider,
-        model: char.model?.model || settings.model,
-        apiKey: settings.useProxy ? '' : settings.apiKeys?.[char.model?.provider || settings.provider] || '',
-        baseUrl: settings.baseUrls?.[char.model?.provider || settings.provider] || '',
-        useProxy: settings.useProxy,
+        provider: 'ollama',
+        model: LOCAL_MODEL,
+        apiKey: '',
+        baseUrl: LOCAL_BASE_URL,
+        useProxy: true,
         messages: withNudge,
         params: { ...(settings.params || {}), temperature: Math.max(0.7, num(settings.params?.temperature, 0.85)) },
         stream: true,
         signal: controller.signal,
         purpose: 'proactive',
         charId: char.id,
-        // 主动搭话是后台行为，用户在等的是"界面别被占住"：
-        // 不传就落回默认的 120 秒 / 10 分钟，一次搭话能把这一路的等待拖满。
-        timeoutMs: 60000,
-        totalTimeoutMs: 120000,
+        // 本地冷启动允许较长首字等待，后台请求仍可取消且有总时限。
+        timeoutMs: LOCAL_REQUEST_TIMEOUT_MS,
+        totalTimeoutMs: LOCAL_REQUEST_TOTAL_MS,
       },
       {}
     );
@@ -175,7 +175,7 @@ export async function maybeTrigger(char, ctx, { manual = false } = {}) {
       charId: char.id,
       role: 'assistant',
       content: text,
-      model: res.model || char.model?.model || settings.model,
+      model: res.model || LOCAL_MODEL,
       usage: res.usage || null,
       emotion: 'neutral',
       status: 'done',
@@ -189,7 +189,7 @@ export async function maybeTrigger(char, ctx, { manual = false } = {}) {
       // 不记的话主动消息的 token/费用会从用量统计与预算里漏掉。
       void addUsage({
         charId: char.id,
-        provider: char.model?.provider || settings.provider,
+        provider: 'ollama',
         model: res.model || settings.model,
         prompt: res.usage.prompt,
         completion: res.usage.completion,
@@ -198,7 +198,7 @@ export async function maybeTrigger(char, ctx, { manual = false } = {}) {
       });
       bus.emit('llm:usage', {
         charId: char.id,
-        provider: char.model?.provider || settings.provider,
+        provider: 'ollama',
         model: res.model || settings.model,
         ...res.usage,
       });

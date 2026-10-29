@@ -1638,9 +1638,7 @@ async function afterRound(g, round) {
   await refreshGroupMessages();
   if (isNearBottom(listEl, 320)) scrollToBottom(listEl, true);
   const reason = round ? round.reason : '';
-  if (reason === 'no-key') {
-    appendGroupNotice('未配置 API Key：打开「设置 → 模型」填一个，角色们就能开口了。');
-  } else if (reason === 'silent' && round && round.spoken.length === 0) {
+  if (reason === 'silent' && round && round.spoken.length === 0) {
     appendGroupNotice('这一轮没有人被 @，所以大家都安静着（当前是「只应 @」模式）。');
   } else if (round && round.spoken.length) {
     markRead(g.id);

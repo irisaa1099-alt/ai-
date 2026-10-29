@@ -1,3 +1,4 @@
+import { LOCAL_MODEL, LOCAL_BASE_URL } from '../core/local-model.js';
 /**
  * ui/chat.js —— 中间栏：消息流 / 输入区 / 流式对话 / 多版本 / 语音（契约 3.14）
  *
@@ -41,7 +42,7 @@ import {
   touchChat,
 } from '../core/runtime.js';
 import { buildMessages, summarizeIfNeeded } from '../core/prompt.js';
-import { abortController, addUsage, chatStream, estimateCost, llmErrors, PROVIDERS } from '../core/llm.js';
+import { abortController, addUsage, chatStream, estimateCost, llmErrors } from '../core/llm.js';
 import { createSplitter } from '../voice/splitter.js';
 import { SpeechQueue, speakText, speaker, stopSpeaking, voiceFor } from '../voice/tts.js';
 import { createRecognizer, sttAvailable } from '../voice/stt.js';
@@ -1706,23 +1707,10 @@ async function generateReply(opts) {
   const target = opts.target || null;
   let userText = String(opts.userText || '');
 
-  // 供应商 / 模型：角色卡可覆盖全局
-  const provider = (char.model && char.model.provider) || s.provider || 'deepseek';
-  const model = (char.model && char.model.model) || s.model || 'deepseek-flash';
-  const apiKeys = s.apiKeys || {};
-  const baseUrls = s.baseUrls || {};
-  const apiKey = apiKeys[provider] || '';
-  const baseUrl = baseUrls[provider] || '';
-
-  // 未配置密钥时给出明确引导（而不是抛一个看不懂的网络错误）；
-  // 本地模型（ollama / lmstudio 等 needKey=false）不需要 Key，直接放行。
-  const meta = PROVIDERS ? PROVIDERS[provider] : null;
-  const needKey = !meta || meta.needKey !== false;
-  if (!s.useProxy && needKey && !apiKey) {
-    toast('还没有配置 API Key，去「设置 → 模型」填一个就能聊了', 'warn', 4600);
-    appendLocalNotice('未配置 API Key：请打开「设置 → 模型」填写密钥，或开启服务端代理。');
-    return;
-  }
+  const provider = 'ollama';
+  const model = LOCAL_MODEL;
+  const apiKey = '';
+  const baseUrl = LOCAL_BASE_URL;
 
   busy = true;
   updateSendBtn();
@@ -1769,7 +1757,7 @@ async function generateReply(opts) {
         baseUrl,
         messages: sendList,
         params: resolveParams(char),
-        useProxy: !!s.useProxy,
+        useProxy: true,
         stream: true,
         signal: controller.signal,
         // 显式给上限：不传就落回 core/llm.js 的默认值（120 秒无内容 / **10 分钟**总时限），

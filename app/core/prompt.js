@@ -1,3 +1,4 @@
+import { localInputBudget } from './local-model.js';
 /**
  * 提示词装配层（契约 3.8）：
  * 把角色卡 + 全局用户档案 + 记忆摘要 + 时间感知 + 好感度
@@ -150,7 +151,7 @@ export function buildMessages(char, history, opts = {}) {
   const runtime = opts.runtime || getRuntime(char?.id);
   const timeCtx = opts.timeCtx || timeContext();
   const ctxCfg = settings.context || {};
-  const budget = num(opts.budgetTokens, num(ctxCfg.budgetTokens, 8000));
+  const budget = localInputBudget(opts.budgetTokens ?? ctxCfg.budgetTokens);
   const maxMessages = num(ctxCfg.maxMessages, 40);
 
   const queryText = opts.userText || history?.at(-1)?.content || '';

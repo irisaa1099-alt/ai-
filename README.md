@@ -4,14 +4,18 @@
 
 ## 快速开始
 
-安装 Node.js 22 或更新版本，在本仓库目录运行：
+本项目仅使用本地模型。当前 Mac 版已包含 Qwen3 权重和 Ollama 运行程序，安装 Node.js 22 或更新版本后，在本仓库目录运行：
 
 ```bash
 cd app
-node server.mjs
+node local-start.mjs
 ```
 
-浏览器打开 <http://127.0.0.1:5180>，在设置中配置模型供应商与自己的 API Key。项目使用原生 ES Module，无需安装 npm 依赖或执行构建。
+启动项目内的 Qwen3 4B 开源模型（权重约 2.5GB），浏览器打开 <http://127.0.0.1:5180>，无需商业 API Key。所有角色与旧配置自动使用项目内模型，不提供商业供应商或自定义远程接口。项目使用原生 ES Module，无需安装 npm 依赖或执行构建。[本地模型说明与来源](app/docs/LOCAL-MODEL.md)。
+
+## Windows 便携版
+
+Windows x64 完整包包含 Node.js、Ollama 与模型权重，解压后双击 `启动趣聊-Windows.bat`。[使用说明与验证范围](app/docs/WINDOWS.md)。Windows 实机验收尚未完成。
 
 ## 项目文档
 

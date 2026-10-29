@@ -787,7 +787,7 @@ function onGameSettled() {
     pushHud();
     renderRunningPanel();
   } else if (g.stopped) {
-    onGameCrashed(new Error(g.reason === 'no-key' ? '还没有配置 API Key（设置 → 模型）' : '游戏已中断'));
+    onGameCrashed(new Error(g.reason === 'no-key' ? '这是旧版本的密钥配置错误，请重新开始游戏以使用本地模型' : '游戏已中断'));
   }
 }
 

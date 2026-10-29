@@ -4,6 +4,7 @@ import { diffChanges, validateBackup } from './sync.js';
  * 本地优先：所有数据只存在用户自己的浏览器里。
  */
 import { bus } from './bus.js';
+import { LOCAL_MODEL, enforceLocalSettings } from './local-model.js';
 import { createId, clamp, num, firstChar, hashCode } from './util.js';
 import { RECENT_LIMIT, RECENT_WINDOW_MS, experienceContent, heardGroupMessage } from './recent.js';
 import { normalizeMemory, sourceKey, sourceSignature, correctFact, retractFact } from './memory.js';
@@ -1290,14 +1291,14 @@ export async function getMemoryHistory(charId) {
  * ------------------------------------------------------------------ */
 
 export const DEFAULT_SETTINGS = {
-  theme: 'dark',
+  theme: 'light',
   accent: '#6c8cff',
   user: { name: '我', avatar: '', persona: '', gender: '' },
-  provider: 'deepseek',
-  model: 'deepseek-flash',
+  provider: 'ollama',
+  model: LOCAL_MODEL,
   apiKeys: {},
   baseUrls: {},
-  useProxy: false,
+  useProxy: true,
   proxyKeySlot: 'default',
   proxyToken: '',
   // thinking: null = 不下发该字段（跟随 DeepSeek 模型默认）；设置 → 模型 → 生成参数 里可切三态（见 ARCHITECTURE 5.19）
@@ -1305,7 +1306,7 @@ export const DEFAULT_SETTINGS = {
   presets: [],
   context: {
     maxMessages: 40,
-    budgetTokens: 8000,
+    budgetTokens: 7000,
     summary: true,
     summaryKeep: 12,
     timeAware: true,
@@ -1392,7 +1393,7 @@ export function getSettings() {
     } catch {
       raw = null;
     }
-    settingsCache = raw ? deepMerge(DEFAULT_SETTINGS, raw) : { ...DEFAULT_SETTINGS };
+    settingsCache = enforceLocalSettings(raw ? deepMerge(DEFAULT_SETTINGS, raw) : { ...DEFAULT_SETTINGS });
   }
   return JSON.parse(JSON.stringify(settingsCache));
 }
@@ -1400,7 +1401,7 @@ export function getSettings() {
 /** 合并写入设置 */
 export function setSettings(patch, opts = {}) {
   const previous = getSettings();
-  const next = deepMerge(previous, patch || {});
+  const next = enforceLocalSettings(deepMerge(previous, patch || {}));
   settingsCache = next;
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));

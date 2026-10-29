@@ -18,3 +18,10 @@ aichat-backup-*.json
 
 # 评测本地连接配置
 app/tools/**/config.local.json
+
+# 项目内的大型模型权重和平台运行库实际保存在此处，但不进入普通 Git 提交
+/models/ollama/
+/runtime/ollama/
+
+# Windows 便携版附带的 Node.js
+/runtime/node/

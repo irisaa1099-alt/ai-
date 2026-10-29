@@ -111,7 +111,7 @@ export function voiceFor(char, settings) {
     if (g !== undefined && g !== null && g !== '') return g;
     return VOICE_DEFAULTS[k];
   };
-  const provider = pick('provider') === 'cloud' ? 'cloud' : 'webspeech';
+  const provider = 'webspeech'; // 本地版本禁用云端语音调用，包括旧角色配置。
   const autoplay = pick('autoplay');
   return {
     provider,
@@ -205,31 +205,10 @@ export function ensureSettings() {
  * @returns {{ provider: string, model: string, apiKey: string, baseUrl: string, useProxy: boolean,
  *             label: string, needKey: boolean }}
  */
-export function cloudConfig(s) {
-  const settings = s || settingsCache || readSettings().s || {};
-  const v = settings.voice || {};
-  const provider = String(v.ttsProvider || v.cloudProvider || settings.provider || 'openai');
-  const meta = getProvider(provider);
-  const model = String(v.ttsModel || v.model || 'gpt-4o-mini-tts');
-  const keys = settings.apiKeys || {};
-  const urls = settings.baseUrls || {};
-  // 语音分区自己的地址（v.baseUrl）优先，其次复用「模型」分区里该供应商的反代地址
-  const apiKey = String(v.apiKey || keys[provider] || '');
-  const overrideBaseUrl = String(v.baseUrl || urls[provider] || '');
-  const baseUrl = String(overrideBaseUrl || meta.baseUrl || '');
-  return {
-    provider,
-    model,
-    apiKey,
-    baseUrl,
-    overrideBaseUrl,
-    useProxy: settings.useProxy === true,
-    proxyToken: String(settings.proxyToken || ''),
-    /** 供应商中文名（错误提示里用） */
-    label: String(meta.label || provider),
-    /** 该供应商是否必须配密钥（ollama / lmstudio 这类本地服务不需要） */
-    needKey: meta.needKey !== false,
-  };
+export function cloudConfig() {
+  // 保留旧导出供备份/旧调用方兼容，但不返回云端地址和凭据。
+  return { provider: 'webspeech', model: '', apiKey: '', baseUrl: '', overrideBaseUrl: '',
+    useProxy: true, proxyToken: '', label: '系统语音', needKey: false };
 }
 
 /**
@@ -974,7 +953,7 @@ export const speaker = {
    */
   async speak(text, cfg, signal) {
     const body = String(text == null ? '' : text).trim();
-    const conf = cfg || VOICE_DEFAULTS;
+    const conf = { ...(cfg || VOICE_DEFAULTS), provider: 'webspeech' };
     if (!body) return;
     if (signal && signal.aborted) return;
 
@@ -1027,7 +1006,7 @@ export const speaker = {
    * @returns {Promise<void>}
    */
   async warm(sentences, cfg) {
-    const conf = cfg || VOICE_DEFAULTS;
+    const conf = { ...(cfg || VOICE_DEFAULTS), provider: 'webspeech' };
     if (conf.provider !== 'cloud' || conf.cache === false) return;
     const list = Array.isArray(sentences) ? sentences : [sentences];
     for (const raw of list) {

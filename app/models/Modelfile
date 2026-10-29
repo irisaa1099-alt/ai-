@@ -1,0 +1,6 @@
+# Qwen3-4B-Instruct-2507，Apache-2.0；Ollama Q4_K_M 量化。
+# 不加入人设 system prompt：应用在每次请求中传入角色与来源记忆。
+FROM qwen3:4b-instruct-2507-q4_K_M
+PARAMETER num_ctx 16384
+PARAMETER temperature 0.7
+PARAMETER repeat_penalty 1

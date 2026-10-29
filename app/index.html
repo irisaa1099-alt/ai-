@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -8,8 +8,25 @@
       name="description"
       content="本地优先的 AI 好友通讯录：给每个 AI 角色一套独立人设、独立聊天记录，数据只存在你自己的浏览器里。"
     />
-    <meta name="theme-color" content="#0f1115" />
-    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#f4f6fa" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // 首次访问用日间主题；样式加载前恢复已保存的选择，避免启动时闪烁。
+      (() => {
+        let mode = 'light';
+        try {
+          const saved = JSON.parse(localStorage.getItem('aichat.settings.v1') || 'null');
+          if (['light', 'dark', 'auto'].includes(saved?.theme)) mode = saved.theme;
+        } catch {}
+        let theme = mode === 'dark' ? 'dark' : 'light';
+        try {
+          if (mode === 'auto') theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        } catch {}
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.themeMode = mode;
+        document.querySelector('meta[name="theme-color"]').content = theme === 'light' ? '#f4f6fa' : '#0f1115';
+      })();
+    </script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="AI 好友" />
@@ -36,7 +53,7 @@
         align-items: center;
         justify-content: center;
         gap: 16px;
-        background: var(--bg, #0f1115);
+        background: var(--bg, #f4f6fa);
         color: var(--dim, #8b93a7);
         font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
         font-size: 13px;

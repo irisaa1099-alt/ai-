@@ -20,6 +20,7 @@ import { el, clear, mount } from './dom.js';
 import { icon } from './icons.js';
 import { modal, toast, confirmDialog, promptDialog } from './toast.js';
 import { bus } from '../core/bus.js';
+import { LOCAL_MODEL, LOCAL_INPUT_BUDGET } from '../core/local-model.js';
 import { debounce, num, clamp, truncate, fmtDate, relTime, copyText, createId, dayKey, readFileAsDataURL } from '../core/util.js';
 import { avatarNode, isImageAvatar, presetCombo, captureVoiceError } from './shared.js';
 import {
@@ -84,7 +85,7 @@ const ACCENT_PRESETS = ['#6c8cff', '#4ec9a8', '#e0b341', '#ff6b6b', '#c084fc', '
 
 
 /** 「获取模型列表」的结果缓存：provider → 模型名数组（不持久化） */
-const fetchedModels = {};
+
 
 /* ===========================================================================
  * 主题（app.js 也复用这里的 applyTheme，保证只有一份实现）
@@ -116,16 +117,17 @@ function softFromAccent(hex, alphaHex = '29') {
  */
 export function applyTheme(theme, accent) {
   const root = document.documentElement;
-  let resolved = theme === 'light' ? 'light' : 'dark';
-  if (theme === 'auto') {
+  const mode = ['light', 'dark', 'auto'].includes(theme) ? theme : 'light';
+  let resolved = mode === 'dark' ? 'dark' : 'light';
+  if (mode === 'auto') {
     try {
-      resolved = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     } catch {
-      resolved = 'dark';
+      resolved = 'light';
     }
   }
   root.dataset.theme = resolved;
-  root.dataset.themeMode = theme || 'dark';
+  root.dataset.themeMode = mode;
   const a = String(accent || '#6c8cff');
   root.style.setProperty('--accent', a);
   root.style.setProperty('--accent-soft', softFromAccent(a));
@@ -355,266 +357,55 @@ async function currentChar() {
  * 查询后端代理状态（设置面板打开代理开关时调用）。
  * @returns {Promise<object|null>} 成功返回 /api/health 的 JSON，失败返回 null
  */
-async function checkHealth() {
-  try {
-    const res = await fetch('/api/health', { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const list = Array.isArray(data && data.providers) ? data.providers : [];
-    if (list.length) {
-      const names = list.map((id) => (PROVIDERS_META[id] ? PROVIDERS_META[id].label : id)).join('、');
-      toast(`后端代理已就绪，服务器已配置密钥：${names}`, 'ok', 5200);
-    } else {
-      toast('后端代理已启动，但服务器还没有配置任何密钥，请在 app/.env 里填写', 'warn', 5600);
-    }
-    return data;
-  } catch {
-    toast('未检测到后端代理，请运行 node server.mjs', 'warn', 5600);
-    return null;
-  }
-}
-
 /** 模型分区 */
 function renderModel(content) {
   const s = getSettings();
-  const pid = PROVIDERS_META[s.provider] ? s.provider : 'deepseek';
-  const meta = getProvider(pid);
-  const keyVal = (s.apiKeys && s.apiKeys[pid]) || '';
-  const baseVal = (s.baseUrls && s.baseUrls[pid]) || '';
-
   clear(content);
-
-  /* ---------- 供应商 ---------- */
-  const providerOptions = Object.values(PROVIDERS_META).map((m) => ({
-    value: m.id,
-    label: `${m.label} · ${m.kind}`,
-  }));
-  const providerSel = selectBox(providerOptions, pid, (v) => {
-    const models = modelOptionsFor(v);
-    patch({ provider: v, model: models[0] || '' });
-    renderModel(content);
-  });
-
-  /* ---------- 模型 ---------- */
-  const modelOptions = modelOptionsFor(pid).map((m) => ({ value: m, label: m }));
-  const modelSel = selectBox(modelOptions, s.model, (v) => {
-    patch({ model: v });
-    modelInput.value = v;
-  });
-  const modelInput = el('input', {
-    value: s.model || '',
-    placeholder: '也可以直接手填模型名，例如 deepseek-flash',
-    on: {
-      change: (e) => {
-        const v = String(e.target.value || '').trim();
-        if (!v) return;
-        patch({ model: v });
-        if (!modelOptions.some((o) => o.value === v)) {
-          modelSel.appendChild(el('option', { value: v, text: `（自定义）${v}` }));
-        }
-        modelSel.value = v;
-      },
-    },
-  });
-
-  /* ---------- 接口地址 ---------- */
-  const baseInput = el('input', {
-    value: baseVal,
-    placeholder: meta.baseUrl || 'https://你的反代地址/v1',
-    on: {
-      change: (e) => {
-        const v = String(e.target.value || '').trim();
-        patch({ baseUrls: { [pid]: v } });
-      },
-    },
-  });
-
-  /* ---------- 获取模型列表 ---------- */
-  const fetchBtn = el(
-    'button.btn',
-    {
-      on: {
-        click: async () => {
-          const cur = getSettings();
-          fetchBtn.disabled = true;
-          fetchBtn.textContent = '获取中…';
-          try {
-            // 先 flush 再取设置：否则刚粘进 Key/改完接口地址就点这个按钮，用的是渲染那一刻的旧值
-            flushPatch();
-            const fresh = getSettings();
-            const list = await listModels(
-              pid,
-              fresh.useProxy ? '' : (fresh.apiKeys && fresh.apiKeys[pid]) || '',
-              (fresh.baseUrls && fresh.baseUrls[pid]) || '',
-              { useProxy: !!fresh.useProxy, proxyToken: fresh.proxyToken || '', keySlot: fresh.proxyKeySlot || 'default' }
-            );
-            if (list && list.length) {
-              fetchedModels[pid] = list;
-              toast(`获取到 ${list.length} 个模型`, 'ok');
-              renderModel(content);
-            } else {
-              toast('获取模型列表失败：请检查接口地址与 API Key（部分供应商不提供该接口）', 'warn', 5200);
-            }
-          } catch (err) {
-            toast(`获取模型列表失败：${(err && err.message) || err}`, 'error');
-          } finally {
-            fetchBtn.disabled = false;
-            fetchBtn.textContent = '获取模型列表';
-          }
-        },
-      },
-    },
-    icon('refresh', 15),
-    el('span', { text: '获取模型列表' })
-  );
-
-  /* ---------- API Key ---------- */
-  let revealed = false;
-  let realKey = keyVal;
-  const keyInput = el('input.mono', {
-    type: 'password',
-    value: realKey ? PASSWORD : '',
-    placeholder: meta.needKey === false ? '（该模型通常无需密钥）' : '粘贴该供应商的原始 API Key',
-    disabled: s.useProxy,
-    on: {
-      focus: () => {
-        if (!revealed && keyInput.value === PASSWORD) keyInput.value = '';
-      },
-      blur: () => {
-        if (!revealed) keyInput.value = realKey ? PASSWORD : '';
-      },
-      input: () => {
-        revealed = true;
-        realKey = String(keyInput.value || '').trim();
-        patch({ apiKeys: { [pid]: realKey } });
-      },
-    },
-  });
-  const eyeBtn = el(
-    'button.btn',
-    {
-      type: 'button',
-      title: '显示 / 隐藏',
-      disabled: s.useProxy,
-      on: {
-        click: () => {
-          revealed = !revealed;
-          keyInput.type = revealed ? 'text' : 'password';
-          keyInput.value = realKey ? (revealed ? realKey : PASSWORD) : '';
-          eyeBtn.textContent = revealed ? '隐藏' : '显示';
-        },
-      },
-    },
-    el('span', { text: '显示' })
-  );
-
-  /* ---------- 服务器代理 ---------- */
-  const proxyRow = toggleRow(
-    '使用服务器代理（useProxy）',
-    !!s.useProxy,
-    (on) => {
-      patch({ useProxy: on });
-      renderModel(content);
-      if (on) void checkHealth();
-    },
-    '打开后请求发往本机 /api/llm，由 server.mjs 从环境变量或 app/.env 注入密钥；之前填写的直连密钥仍保留，但不用于代理请求。'
-  );
-
-  // 代理口令（对应 server.mjs 的 AICHAT_PROXY_TOKEN；留空表示服务器未开启校验）
-  const proxyTokenRow = field(
-    '代理口令（可选）',
-    el('input.input', {
-      type: 'password',
-      value: s.proxyToken || '',
-      placeholder: '服务器 .env 里的 AICHAT_PROXY_TOKEN，留空表示不需要',
-      on: {
-        input: (e) => patch({ proxyToken: String(e.target.value || '').trim() }),
-      },
-    }),
-    '局域网用 ?token= 登录后会自动记住口令；也可在这里填写作为备用。仅本机访问无需填写。'
-  );
-
-  /* ---------- 参数 ---------- */
-  const paramNodes = PARAM_ORDER.filter((k) => PARAM_HINTS[k]).map((k) => renderParam(k, s));
-
-  /* ---------- 预设 ---------- */
-  const presetBlock = renderPresets(content, s);
-
-  /* ---------- 测试连接 ---------- */
-  const testBtn = el(
-    'button.btn.btn-primary',
-    {
-      on: {
-        click: async () => {
-          flushPatch(); // 先把当前编辑内容落盘，保证测的是最新配置
-          const cur = getSettings();
-          testBtn.disabled = true;
-          testBtn.textContent = '测试中…';
-          const t0 = Date.now();
-          try {
-            const res = await chat({
-              provider: cur.provider,
-              model: cur.model,
-              apiKey: cur.useProxy ? '' : (cur.apiKeys && cur.apiKeys[cur.provider]) || '',
-              baseUrl: (cur.baseUrls && cur.baseUrls[cur.provider]) || '',
-              useProxy: cur.useProxy,
-              messages: [{ role: 'user', content: '说"连接正常"四个字' }],
-              params: { maxTokens: 20, temperature: 0 },
-              stream: false,
-            });
-            const ms = Date.now() - t0;
-            const text = truncate(String((res && res.text) || '').trim() || '（模型返回了空内容）', 40);
-            toast(`连接成功（${ms}ms）：${text}`, 'ok', 4600);
-          } catch (err) {
-            toast(llmErrors.humanize(err), 'error', 5600);
-          } finally {
-            testBtn.disabled = false;
-            testBtn.textContent = '测试连接';
-          }
-        },
-      },
-    },
-    icon('send', 15),
-    el('span', { text: '测试连接' })
-  );
-
-  content.appendChild(
-    section(
-      '模型接入',
-      s.useProxy
-        ? '当前模式：服务器代理 —— 使用服务器配置的密钥。'
-        : '当前模式：浏览器直连 —— 使用本机保存的密钥，请求时发送给所选供应商。',
-      field('供应商', providerSel, `${meta.note || ''}${meta.needKey === false ? '（无需密钥）' : ''}`),
-      field(
-        '模型',
-        el('div', { style: { display: 'grid', gap: '8px' } }, modelSel, modelInput),
-        '下拉里是常用模型；供应商更新较快时，直接手填模型名即可。'
-      ),
-      field('接口地址（baseUrl）', baseInput, `留空则使用默认：${meta.baseUrl || '（自定义供应商必须填写）'}`),
-      field('', el('div.row', fetchBtn), null),
-      field('API Key', el('div.key-row', keyInput, eyeBtn), `粘贴原始密钥，不要添加 Bearer、引号或换行；不限前缀和长度。直连密钥保存在浏览器并同步到本机数据目录，请求时仅发送至当前配置的接口。代理模式请在 .env 配置对应供应商的密钥。${meta.keyUrl ? `申请地址：${meta.keyUrl}` : ''}`),
-      proxyRow,
-      proxyTokenRow,
-      el('div.divider'),
-      el('h3', { text: '生成参数' }),
-      el('p.desc', { text: '这些参数决定角色说话的风格；改动即时生效，并作用于所有角色（狼人杀对局除外）。' }),
-      ...paramNodes,
-      renderThinkingRow(meta, s),
-      el('div.divider'),
-      el('h3', { text: '参数预设' }),
-      el('p.desc', { text: '把一整套参数存下来，之后一键切换（例如「短回复」「长文叙事」）。' }),
-      presetBlock,
-      el('div.divider'),
-      el('div.row', testBtn)
-    )
-  );
-}
-
-/** 组合某个供应商的可选模型：内置 + 已拉取 */
-function modelOptionsFor(pid) {
-  const builtin = Array.isArray(CHAT_MODELS[pid]) ? CHAT_MODELS[pid].slice() : [];
-  const extra = Array.isArray(fetchedModels[pid]) ? fetchedModels[pid] : [];
-  return Array.from(new Set([...builtin, ...extra]));
+  const status = el('p.desc', { attr: { role: 'status' }, text: '运行项目启动脚本后，点击「测试连接」检查模型。' });
+  const testBtn = el('button.btn.btn-primary', { text: '测试连接', on: { click: async () => {
+    flushPatch();
+    testBtn.disabled = true;
+    testBtn.textContent = '测试中…';
+    status.textContent = '正在连接项目内的本地模型，首次加载可能需要一些时间…';
+    const start = Date.now();
+    try {
+      const result = await chat({ messages: [{ role: 'user', content: '只回复：连接正常' }],
+        params: { maxTokens: 32, temperature: 0 }, stream: false });
+      if (!result.text?.trim()) throw new Error('模型未返回内容');
+      status.textContent = `连接成功（${Date.now() - start}ms）：${truncate(result.text.trim(), 40)}`;
+    } catch (error) {
+      status.textContent = `连接失败：${llmErrors.humanize(error)}`;
+    } finally { testBtn.disabled = false; testBtn.textContent = '测试连接'; }
+  } } });
+  const modelsBtn = el('button.btn', { text: '检查本地模型', on: { click: async () => {
+    flushPatch();
+    modelsBtn.disabled = true;
+    try {
+      const models = await listModels('ollama', '', '', { proxyToken: getSettings().proxyToken });
+      status.textContent = models.includes(LOCAL_MODEL)
+        ? `模型已就绪：${LOCAL_MODEL}，可以测试连接。`
+        : '未检测到项目模型，请运行项目的启动脚本准备模型。';
+    } catch (error) {
+      status.textContent = `检查失败：${llmErrors.humanize(error)}`;
+    } finally { modelsBtn.disabled = false; }
+  } } });
+  content.appendChild(section(
+    '本地模型',
+    '仅使用项目内的 Qwen3-4B-Instruct-2507，由本机 Ollama 运行，无需 API Key。',
+    field('供应商', selectBox([{ value: 'ollama', label: '本地模型 · Ollama' }], 'ollama', () => {})),
+    field('模型', el('input', { value: LOCAL_MODEL, readOnly: true }), 'Q4_K_M 量化 · 16K 上下文 · Apache 2.0'),
+    field('模型文件', el('code', { text: '项目/models/ollama/' }), '权重实际保存在项目目录中，启动时使用项目专属的本地推理服务。'),
+    el('div.row', testBtn, modelsBtn), status,
+    el('a', { href: 'https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507', target: '_blank', rel: 'noopener noreferrer', text: '模型来源与许可' }),
+    el('div.divider'),
+    el('h3', { text: '生成参数' }),
+    ...PARAM_ORDER.filter((key) => PARAM_HINTS[key]).map((key) => renderParam(key, s)),
+    el('h3', { text: '参数预设' }), renderPresets(content, s),
+    field('网站访问口令（可选）', el('input', {
+      type: 'password', value: s.proxyToken || '', placeholder: '仅局域网访问时使用',
+      on: { input: (event) => patch({ proxyToken: event.target.value.trim() }) }
+    }), '本机访问无需填写；这不是模型 API Key。')
+  ));
 }
 
 /**
@@ -824,8 +615,7 @@ function renderVoice(content) {
   /* ---------- 总开关 / 引擎 ---------- */
   const engineSel = selectBox(
     [
-      { value: 'webspeech', label: '浏览器内置（webspeech，免费离线）' },
-      { value: 'cloud', label: '云端合成（cloud，更自然但按量计费）' },
+      { value: 'webspeech', label: '系统语音（无需商业 API）' },
     ],
     v.provider || 'webspeech',
     (val) => {
@@ -1072,7 +862,7 @@ function renderVoice(content) {
       unlockBtn,
       el('div.divider'),
       toggleRow('启用语音功能', v.enabled !== false, (on) => patch({ voice: { enabled: on } })),
-      field('合成引擎', engineSel, '云端合成失败时会自动静默降级到浏览器内置语音。'),
+      field('合成引擎', engineSel, '使用系统语音；是否支持离线播放取决于已安装的音源。'),
       ...cloudNodes,
       el('div.divider'),
       field('语速', el('div.row', rateRange, rateText)),
@@ -1227,13 +1017,13 @@ async function renderContext(content) {
     on: { change: (e) => patch({ context: { maxMessages: clamp(num(e.target.value, 40), 4, 200) } }) },
   });
 
-  const budgetText = el('span.tiny.mono', { text: String(num(c.budgetTokens, 8000)) });
+  const budgetText = el('span.tiny.mono', { text: String(num(c.budgetTokens, LOCAL_INPUT_BUDGET)) });
   const budgetRange = el('input', {
     type: 'range',
     min: '2000',
-    max: '32000',
+    max: String(LOCAL_INPUT_BUDGET),
     step: '500',
-    value: String(num(c.budgetTokens, 8000)),
+    value: String(num(c.budgetTokens, LOCAL_INPUT_BUDGET)),
     on: {
       input: (e) => {
         budgetText.textContent = String(num(e.target.value, 8000));
@@ -1325,9 +1115,9 @@ async function renderContext(content) {
   content.appendChild(
     section(
       '记忆与上下文',
-      '决定角色"聊久了会不会变傻"。预算越大越聪明，也越贵。',
+      '预算控制每轮保留的上下文；更多内容会增加本机计算时间与内存占用。',
       field('上下文条数上限', maxMsgInput, '每次请求最多携带最近多少条消息。'),
-      field('token 预算', el('div.row', budgetRange, budgetText), '整轮请求（人设 + 记忆 + 历史）的 token 上限，超出会从最旧的消息开始丢弃。'),
+      field('token 预算', el('div.row', budgetRange, budgetText), '输入预算最高约 7000 tokens，给 16K 窗口预留回复空间；估算超出时从最旧的消息开始裁剪。'),
       toggleRow('滚动摘要（自动把旧对话压缩成记忆）', c.summary !== false, (on) => patch({ context: { summary: on } }), '历史过长时自动调用模型生成摘要，保持长期连贯性。'),
       field(
         '保留最近 N 条不压缩',
@@ -1806,7 +1596,7 @@ async function renderData(content) {
       },
       el('span', { text: label })
     );
-    if ((s.theme || 'dark') === mode) btn.classList.add('btn-primary');
+    if ((s.theme || 'light') === mode) btn.classList.add('btn-primary');
     return btn;
   });
 
@@ -2110,8 +1900,8 @@ function renderAbout(content) {
       '关于 AI 好友',
       '一个本地优先（local-first）的 AI 好友通讯录：你不是在用一个聊天框，而是在养一群住在同一部设备里的角色。',
       el('div.kv', el('span.k', { text: '版本' }), el('span.v', { text: `${APP_VERSION} · 原生 ES Module，零依赖零构建` })),
-      el('div.kv', el('span.k', { text: '数据' }), el('span.v', { text: '角色、聊天记录、记忆都存在本机浏览器（IndexedDB）；设置与密钥存在 localStorage。' })),
-      el('div.kv', el('span.k', { text: '运行时' }), el('span.v', { text: '需要 node server.mjs 启动（默认 http://127.0.0.1:5180）。' })),
+      el('div.kv', el('span.k', { text: '数据' }), el('span.v', { text: '角色、聊天记录与记忆保存在浏览器和项目本地数据目录；设置保存在本机。' })),
+      el('div.kv', el('span.k', { text: '运行时' }), el('span.v', { text: '双击项目启动脚本，同时启动网站和本地模型（默认 http://127.0.0.1:5180）。' })),
       el('div.divider'),
       el('h3', { text: '快捷键' }),
       kvList,
@@ -2121,9 +1911,9 @@ function renderAbout(content) {
         'p.desc',
         {
           text:
-            '· 你的 API Key 与聊天记录都只保存在本机浏览器，本应用没有服务器数据库，也不会上传任何数据。\n' +
-            '· 只有在你发送消息、测试连接、整理记忆或使用云端语音时，相关内容才会通过你配置的接口发往你选择的模型供应商。\n' +
-            '· 如果开启「服务器代理」，密钥会改由本机 server.mjs 从 .env 读取，浏览器不再持有密钥；请勿把带密钥的代理暴露到公网。\n' +
+            '· 角色与聊天记录保存在浏览器及本机项目数据目录；无需模型 API Key。\n' +
+            '· 文本生成与记忆整理仅调用本机项目内的 Qwen3 模型；云端模型和云端语音接口已停用。\n' +
+            '· 模型请求固定转发到项目本地服务；局域网访问使用独立的网站访问口令。\n' +
             '· 角色与聊天记录会自动写入电脑本地文件（data/db），浏览器数据被清理也能恢复。',
           style: { whiteSpace: 'pre-wrap' },
         }
@@ -2144,8 +1934,8 @@ function renderAbout(content) {
       el('h3', { text: '如果遇到问题' }),
       el('p.desc', {
         text:
-          '· 页面白屏或报错：请确认是用 node server.mjs 启动后访问 http://127.0.0.1:5180，而不是直接双击 index.html。\n' +
-          '· 收不到回复：到「模型」分区点「测试连接」，看具体报错；401 一般是密钥问题，网络错误一般是地址或代理问题。\n' +
+          '· 页面白屏或报错：请确认已运行项目启动脚本，再访问 http://127.0.0.1:5180，而不是直接双击 index.html。\n' +
+          '· 收不到回复：到「模型」分区点「测试连接」，看具体报错；访问被拒绝时查看具体原因；连接失败时检查本地启动窗口。\n' +
           '· 没有声音：先点语音分区顶部的「🔊 点击开启语音」，浏览器要求至少一次用户手势才允许播放声音。',
         style: { whiteSpace: 'pre-wrap' },
       })
