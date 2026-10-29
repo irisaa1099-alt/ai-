@@ -622,6 +622,9 @@ try {
   await check('只改设置 + 立刻触发关页兜底 → runtime.json 不被清空', async () => {
     const r = await page.eval(`(async () => {
       const store = await import('./core/store.js');
+      // 默认主题已是 light，先切到 dark，确保本用例确实产生待保存的修改。
+      store.setSettings({ theme: 'dark' });
+      await (await import('./core/filestore.js')).syncNow();
       // 记录真正发出去的请求体：必须**不带** runtime 字段
       const sent = [];
       const orig = window.fetch;

@@ -1,4 +1,4 @@
-import { enqueue, drain, clearOutbox, firstQueuedOperation, rewriteQueuedOperation } from './outbox.js';
+import { enqueue, drain, clearOutbox, discardStaleOperations, firstQueuedOperation, rewriteQueuedOperation } from './outbox.js';
 import { applyChanges, diffChanges } from './sync.js';
 import { entityFields } from './entity-sync.js';
 /**
@@ -26,6 +26,15 @@ import { createId, num } from './util.js';
 const API = '/api/db';
 const DELETED_KEY = 'aichat.deleted.v1';
 const ENABLED_KEY = 'aichat.filestore.enabled';
+const GENERATION_KEY = 'aichat.filestore.generation';
+// Each tab keeps the generation of the data it loaded, not a sibling tab's later localStorage value.
+let generation = '0';
+try { generation = localStorage.getItem(GENERATION_KEY) || '0'; } catch {}
+let wipedGeneration = null;
+function acceptGeneration(value) {
+  generation = value;
+  try { localStorage.setItem(GENERATION_KEY, value); } catch {}
+}
 
 /** @type {{available:boolean, dir:string, status:'off'|'ok'|'syncing'|'error', error:string, lastSync:number, pending:number, conflict:boolean}} */
 const state = {
@@ -123,10 +132,10 @@ export function clearGroupDeleted() {
  * 与服务器通信
  * ------------------------------------------------------------------ */
 
-async function apiPost(path, body, method = 'POST', keepalive = false) {
+async function apiPost(path, body, method = 'POST', expectedGeneration = generation, keepalive = false) {
   const res = await fetch(API + path, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Aichat-Db-Generation': expectedGeneration },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(15000),
     ...(keepalive ? { keepalive: true } : {}),
@@ -146,7 +155,7 @@ async function apiPost(path, body, method = 'POST', keepalive = false) {
 let pendingJournal = Promise.resolve();
 function journal(path, body, method = 'POST') {
   bindPagehide();
-  const operation = { path, body, method };
+  const operation = { path, body, method, generation };
   const ready = enqueue(operation);
   pendingJournal = Promise.all([pendingJournal.catch(() => {}), ready]);
   pendingJournal.catch(() => {});
@@ -427,7 +436,7 @@ function flushStateNow() {
     stateResolve(false);
     stateResolve = null;
   }
-  void pendingJournal.then(() => drain((path, body, method = 'POST') => apiPost(path, body, method, true)))
+  void pendingJournal.then(() => drain((path, body, method, expectedGeneration) => apiPost(path, body, method, expectedGeneration, true)))
     .catch((err) => setStatus('error', err.message, err));
 }
 
@@ -486,13 +495,20 @@ export async function mirrorWipeAll(charIds) {
     await pendingJournal;
     await drain(apiPost);
     const ok = await apiPost('/wipe', { charIds: charIds || [], force: true });
+    wipedGeneration = ok.generation || generation;
     // 墓碑要等服务端确认删除成功后再清：若请求失败而墓碑已丢，
     // 下次回填会把"删过但没真删掉"的角色/群拉回来
-    await clearOutbox();
+    await discardStaleOperations(ok.retiredGenerations || []);
     clearDeleted();
     clearGroupDeleted();
     return ok;
   });
+}
+
+/** Called only after store.wipeAll has successfully cleared the browser tables. */
+export function completeWipeAll() {
+  if (wipedGeneration !== null) acceptGeneration(wipedGeneration);
+  wipedGeneration = null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -512,9 +528,21 @@ export async function syncOnBoot() {
     state.status = 'syncing';
     bus.emit('filestore:status', { ...state });
 
+    // Inspect the reset marker before replay: an old outbox must not refill a cleared database.
+    let remote = await apiGet('/state');
+    const remoteGeneration = remote.generation || '0';
+    const reset = remoteGeneration !== generation;
+    // Failed journaling of a retired database must not prevent loading the new one.
+    if (reset) pendingJournal = pendingJournal.catch(() => {});
     await pendingJournal;
+    if (reset) {
+      dropPendingWrites();
+    }
+    await discardStaleOperations(remote.retiredGenerations || []);
+    // Preserve writes already made by a sibling tab in the new generation before replacing shared IDB.
     await drain(apiPost);
-    const remote = await apiGet('/state');
+    remote = await apiGet('/state');
+    if ((remote.generation || '0') !== remoteGeneration) throw new Error('数据已在其他页面清空，请刷新页面后继续');
     const localChars = await store.listCharacters();
 
     // 盘上有什么"用户数据"？角色是主判据，但**群聊也必须算**：
@@ -528,10 +556,10 @@ export async function syncOnBoot() {
     // 磁盘写入失败），一旦以盘为准就会把本地角色冲掉。所以这种情况只在"本地也没有角色"时才回填，
     // 其余情形交给情况 B 把本地整体推上盘，两边都不会丢。
     const hasDiskChars = Array.isArray(remote.characters) && remote.characters.length > 0;
-    const restoreFromDisk = hasDiskChars || (diskGroupRows.length > 0 && localChars.length === 0);
+    const restoreFromDisk = reset || remoteGeneration !== '0' || hasDiskChars || (diskGroupRows.length > 0 && localChars.length === 0);
     if (restoreFromDisk) {
       // 墓碑 = 本地 localStorage 记录 ∪ 服务器返回的（跨浏览器/清站点数据后仍有效）
-      const deleted = readDeleted();
+      const deleted = reset ? {} : readDeleted();
       for (const t of Array.isArray(remote.deleted) ? remote.deleted : []) {
         if (t && t.id && (!t.kind || t.kind === 'character')) deleted[t.id] = num(t.at, Date.now());
       }
@@ -551,7 +579,7 @@ export async function syncOnBoot() {
       }
 
       // 群聊：同样以盘为准回填（成员里已经不存在的角色会被过滤掉）
-      const deletedGroups = readGroupDeleted();
+      const deletedGroups = reset ? {} : readGroupDeleted();
       for (const t of Array.isArray(remote.deleted) ? remote.deleted : []) {
         if (t && t.id && t.kind === 'group') deletedGroups[t.id] = num(t.at, Date.now());
       }
@@ -566,9 +594,12 @@ export async function syncOnBoot() {
         groupData.push({ group: g, messages: gmsgs.messages });
       }
 
-      const localRuntimeBefore = sanitizeRuntime(store.readRuntimeAll() || {});
+      const localRuntimeBefore = reset ? {} : sanitizeRuntime(store.readRuntimeAll() || {});
       const privateMessages = charData.flatMap((row) => row.messages);
       const groupMessages = groupData.flatMap((row) => row.messages);
+      if (((await apiGet('/state')).generation || '0') !== remoteGeneration) {
+        throw new Error('数据已在其他页面清空，请刷新页面后继续');
+      }
       await store.replaceLocalSnapshot({
         characters: charData.map((row) => row.char),
         messages: privateMessages,
@@ -576,6 +607,11 @@ export async function syncOnBoot() {
         groups: groupData.map((row) => row.group),
         groupMessages,
       });
+      if (reset) {
+        clearDeleted();
+        clearGroupDeleted();
+      }
+      acceptGeneration(remoteGeneration);
       const msgCount = privateMessages.length;
       const groupMsgCount = groupMessages.length;
 
@@ -659,6 +695,7 @@ export async function syncOnBoot() {
 
     if (remote.settings) store.setSettings(remote.settings, { localOnly: true });
     if (remote.runtime) store.writeRuntimeAll(remote.runtime);
+    acceptGeneration(remoteGeneration);
     setStatus('ok');
     return { ok: true, action: 'none', chars: 0, messages: 0, groups: 0, groupMessages: 0, dir: state.dir };
   } catch (err) {
@@ -674,6 +711,10 @@ export async function syncNow() {
   if (!ok) return { ok: false, action: 'off' };
   try {
     setStatus('syncing');
+    const remote = await apiGet('/state');
+    const remoteGeneration = remote.generation || '0';
+    if (remoteGeneration !== generation) throw new Error('数据已在其他页面清空，请刷新页面后继续；清空前的修改不会重新写入');
+    await discardStaleOperations(remote.retiredGenerations || []);
     // Mirror writes journal before sending; drain shares the lock with every window.
     let checkpoint;
     do {

@@ -18,6 +18,7 @@ import {
   mirrorSettings,
   mirrorRuntime,
   mirrorWipeAll,
+  completeWipeAll,
   mirrorGroup,
   mirrorGroupDeleted,
   mirrorGroupMessages,
@@ -1795,6 +1796,7 @@ export async function wipeAll() {
   await idb('groups', 'readwrite', (s) => s.clear());
   await idb('groupMessages', 'readwrite', (s) => s.clear());
   writeRuntimeAll({});
+  completeWipeAll();
   bus.emit('char:deleted', { all: true });
   bus.emit('group:deleted', { all: true });
   return {

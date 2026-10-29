@@ -28,7 +28,7 @@ export function enqueue(operation) {
   // Copy now: callers may mutate their settings/runtime objects while IDB opens.
   const copy = JSON.parse(JSON.stringify(operation));
   const pending = transaction('readwrite', (s) => s.add(copy));
-  pending.catch(() => { try { localStorage.setItem(UNSAFE, '1'); } catch {} });
+  pending.catch(() => { try { localStorage.setItem(UNSAFE, copy.generation || '0'); } catch {} });
   return pending;
 }
 
@@ -44,7 +44,7 @@ export function drain(send) {
   return serialized(async () => {
     if (localStorage.getItem(UNSAFE)) throw new Error('有修改未能保存到同步队列，已保留浏览器数据；请先导出浏览器备份，再通过导入备份恢复；立即同步不会覆盖未入队的数据');
     for (const row of await transaction('readonly', (s) => s.getAll())) {
-      try { await send(row.path, row.body, row.method); }
+      try { await send(row.path, row.body, row.method, row.generation || '0'); }
       catch (err) { err.operation = row; throw err; }
       await transaction('readwrite', (s) => s.delete(row.sequence));
     }
@@ -67,7 +67,22 @@ export function rewriteQueuedOperation(sequence, rewrite) {
 }
 
 export async function clearOutbox() {
-  await chain;
-  await transaction('readwrite', (s) => s.clear());
-  localStorage.removeItem(UNSAFE);
+  return serialized(async () => {
+    await transaction('readwrite', (s) => s.clear());
+    localStorage.removeItem(UNSAFE);
+  });
+}
+
+/** A reset invalidates old operations, but must not discard another tab's new-generation writes. */
+export function discardStaleOperations(retiredGenerations) {
+  return serialized(async () => {
+    // A stale /state response must never discard writes from a later reset.
+    const retired = new Set(retiredGenerations);
+    const rows = await transaction('readonly', (s) => s.getAll());
+    await transaction('readwrite', (s) => {
+      for (const row of rows) if (retired.has(row.generation || '0')) s.delete(row.sequence);
+    });
+    const unsafe = localStorage.getItem(UNSAFE);
+    if (unsafe && retired.has(unsafe === '1' ? '0' : unsafe)) localStorage.removeItem(UNSAFE);
+  });
 }

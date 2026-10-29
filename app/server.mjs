@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 
 const ROOT = path.resolve(import.meta.dirname || path.dirname(new URL(import.meta.url).pathname));
 
@@ -799,6 +800,31 @@ function withFsLock(fn) {
   return run;
 }
 
+// Kept outside the tables cleared by /wipe. Legacy databases start at generation 0.
+async function dbMetadata() {
+  const meta = await readJsonFile(path.join(DATA_DIR, 'db-generation.json'), null);
+  if (meta === null) return { generation: '0', retiredGenerations: [] };
+  const retiredGenerations = meta.retiredGenerations || [];
+  if (typeof meta.generation !== 'string' || !meta.generation || !Array.isArray(retiredGenerations) ||
+      retiredGenerations.some(value => typeof value !== 'string' || !value || value === meta.generation)) {
+    throw new Error('数据库清空标记损坏，已停止写入');
+  }
+  return { generation: meta.generation, retiredGenerations };
+}
+
+function withDbWrite(req, fn) {
+  return withFsLock(async () => {
+    const { generation } = await dbMetadata();
+    if (String(req.headers['x-aichat-db-generation'] || '0') !== generation) {
+      const err = new Error('数据已在其他页面清空，请刷新页面后继续；清空前的修改不会重新写入');
+      err.status = 409;
+      err.code = 'db-generation-changed';
+      throw err;
+    }
+    return fn();
+  });
+}
+
 async function ensureDir(dir) {
   let lastErr = null;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -901,12 +927,12 @@ async function readMessages(ownerId, kind = 'messages') {
 
 /** 追加消息（NDJSON 一行一条，天然支持并发与增量） */
 const compactionThresholds = new Map();
-async function appendMessages(ownerId, messages, kind = 'messages') {
+async function appendMessages(ownerId, messages, kind, req) {
   const id = safeId(ownerId);
   const file = path.join(DB_DIRS[kind] || DB_DIRS.messages, `${id}.ndjson`);
   const lines = messages.map((m) => JSON.stringify(m)).join('\n');
   if (!lines) return 0;
-  await withFsLock(() =>
+  await withDbWrite(req, () =>
     withLock(file, async () => {
       await ensureDir(path.dirname(file));
       await fsp.appendFile(file, lines + '\n', 'utf8');
@@ -929,8 +955,8 @@ async function appendMessages(ownerId, messages, kind = 'messages') {
 }
 
 /** 记录删除（写墓碑，保证别的标签页/浏览器也同步删掉） */
-async function writeTombstone(charId, also = []) {
-  return withFsLock(async () => {
+async function writeTombstone(charId, req, also = []) {
+  return withDbWrite(req, async () => {
     await ensureDataDirsUnlocked();
     const id = safeId(charId);
     await writeAtomicUnlocked(
@@ -944,8 +970,8 @@ async function writeTombstone(charId, also = []) {
 }
 
 /** 群聊删除：同样留墓碑（防止旧标签页把群聊复活），并清掉它的两份文件 */
-async function writeGroupTombstone(groupId) {
-  return withFsLock(async () => {
+async function writeGroupTombstone(groupId, req) {
+  return withDbWrite(req, async () => {
     await ensureDataDirsUnlocked();
     const id = safeId(groupId);
     await writeAtomicUnlocked(
@@ -1078,6 +1104,7 @@ async function handleDbState(res) {
   return json(res, 200, {
     ok: true,
     dir: DATA_DIR,
+    ...await dbMetadata(),
     characters,
     groups,
     deleted,
@@ -1096,7 +1123,7 @@ async function handleDbState(res) {
 /** 把浏览器内存里的状态整体写盘（用于新装/恢复/多设备覆盖） */
 async function handleDbReplace(req, res) {
   const body = JSON.parse(await readBody(req, 64 * 1024 * 1024));
-  return withFsLock(() => replaceDbBody(body, res));
+  return withDbWrite(req, () => replaceDbBody(body, res));
 }
 
 /** 调用方已持有全局文件锁；整个快照、清目录、重建过程不得穿插普通镜像写入。 */
@@ -1238,9 +1265,9 @@ async function handleDbEntity(req, res, kind, id, rest) {
     return json(res, 200, { ok: true, data });
   }
   if (req.method === 'DELETE') {
-    if (kind === 'characters') await writeTombstone(id);
-    else if (kind === 'groups') await writeGroupTombstone(id);
-    else await withFsLock(() => fsp.rm(file, { force: true }));
+    if (kind === 'characters') await writeTombstone(id, req);
+    else if (kind === 'groups') await writeGroupTombstone(id, req);
+    else await withDbWrite(req, () => fsp.rm(file, { force: true }));
     return json(res, 200, { ok: true });
   }
   if (req.method !== 'POST' && req.method !== 'PUT') return json(res, 405, { error: { message: '不支持的方法' } });
@@ -1248,12 +1275,12 @@ async function handleDbEntity(req, res, kind, id, rest) {
   const body = JSON.parse(await readBody(req, 32 * 1024 * 1024));
   if (isMessageKind) {
     const list = Array.isArray(body) ? body : body.messages || [];
-    const n = await appendMessages(id, list, kind);
+    const n = await appendMessages(id, list, kind, req);
     return json(res, 200, { ok: true, appended: n });
   }
   if (kind === 'characters' || kind === 'groups') {
     try {
-      await withFsLock(async () => {
+      await withDbWrite(req, async () => {
         const current = await readJsonFile(file, null);
         const next = mergeEntity(current, body);
         await writeAtomicUnlocked(file, JSON.stringify(next, null, 1));
@@ -1262,7 +1289,7 @@ async function handleDbEntity(req, res, kind, id, rest) {
       if (err.status === 409) return json(res, 409, { error: { message: err.message, code: err.code } });
       throw err;
     }
-  } else await writeAtomic(file, JSON.stringify(body.data || body, null, 1));
+  } else await withDbWrite(req, () => writeAtomicUnlocked(file, JSON.stringify(body.data || body, null, 1)));
   return json(res, 200, { ok: true });
 }
 
@@ -1440,7 +1467,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(204, {
         'Access-Control-Allow-Origin': req.headers.origin || 'null',
         'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Aichat-Token',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Aichat-Token,X-Aichat-Db-Generation',
       });
       res.end();
       return;
@@ -1488,7 +1515,7 @@ const server = http.createServer(async (req, res) => {
           // 于是好感度 / 未读所在的 runtime.json 被整份覆盖成空对象。
           // 这里按"字段是否存在 + 是不是对象"判断：显式传 `{}` 仍然表示"清空运行时状态"（清库时用得到）。
           const has = (k) => data[k] !== undefined && data[k] !== null && typeof data[k] === 'object';
-          await withFsLock(async () => {
+          await withDbWrite(req, async () => {
             for (const key of ['settings', 'runtime']) {
               const file = path.join(DATA_DIR, `${key}.json`);
               const changes = data[`${key}Changes`];
@@ -1528,8 +1555,15 @@ const server = http.createServer(async (req, res) => {
           });
         }
         // 整库清空前先存快照（指定 id 的删除属于日常操作，不存）
-        await withFsLock(async () => {
-          if (!ids.length && !groupIds.length) await safetySnapshot('before-wipe', true);
+        const metadata = await withDbWrite(req, async () => {
+          if (!ids.length && !groupIds.length) {
+            await safetySnapshot('before-wipe', true);
+            // Persist the fence before deleting: a crash must not allow old clients to refill the database.
+            const previous = await dbMetadata();
+            await writeAtomicUnlocked(path.join(DATA_DIR, 'db-generation.json'), JSON.stringify({
+              generation: randomUUID(), retiredGenerations: [...new Set([...previous.retiredGenerations, previous.generation])],
+            }));
+          }
           for (const kind of ['characters', 'messages', 'memory', 'groups', 'groupmsgs', 'deleted']) {
             const targets = kind === 'groups' || kind === 'groupmsgs' ? groupIds : ids;
             if (targets.length && kind !== 'deleted') {
@@ -1546,8 +1580,9 @@ const server = http.createServer(async (req, res) => {
             await fsp.rm(path.join(DATA_DIR, 'runtime.json'), { force: true });
           }
           await ensureDataDirsUnlocked();
+          return dbMetadata();
         });
-        return json(res, 200, { ok: true });
+        return json(res, 200, { ok: true, ...metadata });
       }
       // /api/db/messages/:id/replace 与 /api/db/groupmsgs/:id/replace —— 整段聊天记录重写
       if ((seg[2] === 'messages' || seg[2] === 'groupmsgs') && seg[3] && seg[4] === 'replace' && (req.method === 'POST' || req.method === 'PUT')) {
@@ -1557,7 +1592,7 @@ const server = http.createServer(async (req, res) => {
         const list = Array.isArray(body.messages) ? body.messages : [];
         await ensureDataDirs();
         const file = path.join(DB_DIRS[kind], `${id}.ndjson`);
-        await withFsLock(() => withLock(file, () =>
+        await withDbWrite(req, () => withLock(file, () =>
           writeAtomicUnlocked(file, list.map((m) => JSON.stringify(m)).join('\n') + (list.length ? '\n' : ''))
         ));
         return json(res, 200, { ok: true, written: list.length });
@@ -1584,6 +1619,7 @@ const server = http.createServer(async (req, res) => {
     }
     return await serveStatic(req, res, url);
   } catch (err) {
+    if (err.status === 409) return json(res, 409, { error: { message: err.message, code: err.code } });
     console.error('[server] 未捕获错误', err);
     try {
       json(res, 500, { error: { message: String(err?.message || err) } });

@@ -91,6 +91,7 @@ const CMD_HELP = [
  * @param {string} text
  */
 async function insertGroupSystem(g, text) {
+  const view = groupViewToken;
   try {
     const msg = await appendGroupMessage({
       groupId: g.id,
@@ -100,6 +101,7 @@ async function insertGroupSystem(g, text) {
       content: text,
       at: Date.now(),
     });
+    if (!ownsGroupView(g.id, view)) return;
     messages.push(msg);
     await refreshGroupMessages();
   } catch (err) {
@@ -156,6 +158,7 @@ function showCommandHelp() {
  * @returns {Promise<{action:'send'|'handled', content?:string}>}
  */
 async function runCommand(raw, g) {
+  const view = groupViewToken;
   if (raw[0] !== '/') return { action: 'send' };
   const m = raw.match(/^\/([a-zA-Z]+)\s*([\s\S]*)$/);
   if (!m) return { action: 'send' };
@@ -188,6 +191,7 @@ async function runCommand(raw, g) {
 
     case 'again': {
       const last = (await listGroupMessages(g.id)).reverse().find((m) => m.role === 'assistant');
+      if (!ownsGroupView(g.id, view)) return { action: 'handled' };
       if (!last) {
         toast('还没有角色说过话', 'warn');
         return { action: 'handled' };
@@ -255,6 +259,13 @@ const STY = {
 
 let rootEl = null;
 let ctxRef = null;
+/** 切走再切回同一群也属于新视图，旧发送不能继续操作它。 */
+let groupViewToken = {};
+
+function ownsGroupView(groupId, token) {
+  return token === groupViewToken && group?.id === groupId &&
+    ctxRef?.currentGroup?.id === groupId && Boolean(inputEl?.isConnected);
+}
 
 /** @type {object|null} 当前群聊 */
 let group = null;
@@ -295,16 +306,31 @@ let composerPlaceholder = '';
  * 否则最后一次按键的 350ms 定时器会在清空之后触发，把刚发出去的话又写回草稿，
  * 刷新后回填到输入框（单聊 chat.js 的 saveDraftSoon 同理）。
  */
+let pendingGroupDraftId = '';
 const saveGroupDraftSoon = debounce((groupId, text) => {
+  pendingGroupDraftId = '';
   if (!groupId) return;
   if (text) writeLS(`aichat.groupDraft.${groupId}`, text);
   else removeLS(`aichat.groupDraft.${groupId}`);
 }, 350);
 
+function cancelGroupDraftWrite(groupId) {
+  if (pendingGroupDraftId !== groupId) return;
+  saveGroupDraftSoon.cancel();
+  pendingGroupDraftId = '';
+}
+
 /** 发送 / 清空输入时：撤掉挂起的去抖写入 + 删掉该群草稿（两件事缺一不可） */
 function dropGroupDraft(groupId) {
-  saveGroupDraftSoon.cancel();
+  cancelGroupDraftWrite(groupId);
   if (groupId) removeLS(`aichat.groupDraft.${groupId}`);
+}
+
+/** 旧视图发送已成功：只删除仍是发送原文的旧草稿，不动重开后的同群视图。 */
+function dropSentGroupDraft(groupId, text, sourceInput) {
+  if (ctxRef?.currentGroup?.id === groupId && inputEl !== sourceInput) return;
+  if (sourceInput.value !== text || readLS(`aichat.groupDraft.${groupId}`, '') !== text) return;
+  dropGroupDraft(groupId);
 }
 
 /** 是否正在生成（整轮） */
@@ -447,6 +473,7 @@ function curMembers() {
  */
 export function renderGroupChat(root, ctx) {
   if (!root) return;
+  groupViewToken = {};
   stopGroupRound('switch');
   stopStt(true);
   resetSpeech();
@@ -539,6 +566,7 @@ function renderPlaceholder(root) {
 /** 重新载入消息并重画 */
 export async function refreshGroupMessages(opts = {}) {
   const g = group || syncFromCtx();
+  const view = groupViewToken;
   if (!ctxRef || !listEl || !g) return;
   // 面板已被替换（切回了单聊）：不要再对已分离的 DOM 做重绘
   if (rootEl && !rootEl.isConnected) return;
@@ -549,7 +577,7 @@ export async function refreshGroupMessages(opts = {}) {
   } catch (err) {
     console.warn('[groupchat] 读取群消息失败', err);
   }
-  if (!group || group.id !== g.id) return;
+  if (!ownsGroupView(g.id, view)) return;
   const follow = isNearBottom(listEl, 260);
   const scrollTop = listEl.scrollTop;
   messages = Array.isArray(list) ? list : [];
@@ -1254,6 +1282,7 @@ function buildComposer(g) {
   inputEl.value = readLS(`aichat.groupDraft.${g.id}`, '');
   composerPlaceholder = inputEl.placeholder;
   inputEl.addEventListener('input', () => {
+    pendingGroupDraftId = g.id;
     saveGroupDraftSoon(g.id, inputEl.value);
     updateHint();
   });
@@ -1432,7 +1461,10 @@ async function toggleAutoTalk(g) {
 /** 发送一条群消息 → 触发一轮角色发言 */
 async function sendCurrent(g) {
   if (!g || !inputEl) return;
-  const raw = String(inputEl.value || '').trim();
+  const view = groupViewToken;
+  const sourceInput = inputEl;
+  const draft = String(sourceInput.value || '');
+  const raw = draft.trim();
   if (!raw) {
     toast('写点什么再发送吧', 'warn');
     return;
@@ -1457,8 +1489,14 @@ async function sendCurrent(g) {
     }
   }
   // 命令系统：/me /ooc /roll /again /stop /clear /help
+  // 异步保存期间若切群，原文仍有自己的草稿，失败恢复不必碰新会话输入框。
+  writeLS(`aichat.groupDraft.${g.id}`, draft);
   const cmdResult = await runCommand(raw, g);
   if (cmdResult.action === 'handled') {
+    if (!ownsGroupView(g.id, view)) {
+      dropSentGroupDraft(g.id, draft, sourceInput);
+      return;
+    }
     inputEl.value = '';
     inputEl.style.height = '';
     dropGroupDraft(g.id);
@@ -1476,12 +1514,18 @@ async function sendCurrent(g) {
       content,
       at: Date.now(),
     });
+    // 消息已保存到发送时的群；切走后不清新视图草稿，也不在新群启动回复。
+    if (!ownsGroupView(g.id, view)) {
+      dropSentGroupDraft(g.id, draft, sourceInput);
+      return;
+    }
     messages.push(msg);
   } catch (err) {
     // 入库失败时**不能**把用户刚打的话清掉：以前是先清空输入框与草稿、再保存，
     // 保存失败就只剩一个 toast，用户得重打一遍。现在失败时把原文放回去。
-    restoreFailedGroupSend(g.id, content);
-    toast(`消息保存失败：${(err && err.message) || err}（内容已留在输入框）`, 'error', 5000);
+    restoreFailedGroupSend(g.id, content, view);
+    const hint = ownsGroupView(g.id, view) ? '内容已留在输入框' : '请回原群查看草稿';
+    toast(`消息保存失败：${(err && err.message) || err}（${hint}）`, 'error', 5000);
     return;
   }
   // 只有真的存好了才清空输入框（与草稿）
@@ -1491,6 +1535,7 @@ async function sendCurrent(g) {
   updateHint();
   touchChat(g.id);
   await refreshGroupMessages();
+  if (!ownsGroupView(g.id, view)) return;
   if (isNearBottom(listEl, 320)) scrollToBottom(listEl, true);
   await startRound({ userText: content });
 }
@@ -1500,10 +1545,15 @@ async function sendCurrent(g) {
  * @param {string} groupId
  * @param {string} content 用户原本要发的内容
  */
-function restoreFailedGroupSend(groupId, content) {
+function restoreFailedGroupSend(groupId, content, view) {
   try {
+    if (!ownsGroupView(groupId, view)) {
+      // 新视图可能已经写了新草稿；只在原群尚无草稿时保存失败的原文。
+      if (!readLS(`aichat.groupDraft.${groupId}`, '')) writeLS(`aichat.groupDraft.${groupId}`, content);
+      return;
+    }
     // 先撤掉挂起的去抖写盘，免得它把"空输入框"写进草稿
-    saveGroupDraftSoon.cancel();
+    cancelGroupDraftWrite(groupId);
     if (inputEl) {
       inputEl.value = content;
       autoGrow(inputEl);

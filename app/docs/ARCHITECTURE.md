@@ -715,6 +715,7 @@ export function mirrorMessagesReplace(charId, messages): Promise<boolean>
 export function mirrorMemory(charId, memory): Promise<boolean>
 export function mirrorSettings(settings, runtime): Promise<boolean>
 export function mirrorWipeAll(charIds): Promise<boolean>
+export function completeWipeAll(): void // store 完成本地清空后采用服务端的新代际
 export function noteDeleted(charId, at?): void
 export function clearDeleted(): void
 ```
@@ -727,11 +728,16 @@ export function clearDeleted(): void
   `characters/<角色id>.json`、`messages/<角色id>.ndjson`、`memory/<角色id>.json`、
   `groups/<群id>.json`、`groupmsgs/<群id>.ndjson`、`deleted/<id>.json`（角色墓碑）、
   `deleted/g-<群id>.json`（群聊墓碑）、`settings.json`、`runtime.json`、`backup-<日期>.json`。
+  `db-generation.json` 单独记录当前代际及已失效代际，整库清空和旧备份恢复不能删除或覆盖它。
 - **启动同步策略**：磁盘上有**角色或群聊** → 以磁盘为准清空并回填本地库（群里已被删除的成员会被顺手过滤掉）；
-  磁盘为空而本地有 → 把本地整体推上盘；两者都空 → 不做任何事。写入用「临时文件 + rename」保证原子性。
+  从未清空的初始代际 `0` 中，磁盘为空而本地有 → 把本地整体推上盘；两者都空 → 不做任何事。
+  一旦服务端清空过，空库也具有权威性，不允许旧浏览器按首次迁移回推。写入用「临时文件 + rename」保证原子性。
   判据里必须带上群聊：删角色会把群成员摘光，角色被删完时盘上只剩群文件，只看"有没有角色"
   就会让零成员的群与它的聊天记录再也回填不出来（见 5.14①）。"盘上只有群、本地还有角色"这种
   盘面不整体回填（避免把本地角色冲掉），交给"本地推上盘"那条路，两边都不会丢。
+- **整库清空边界**：`/state` 与 `/wipe` 返回 `generation`、`retiredGenerations`。清空在全局写锁内先持久化新代际，再删除表；所有数据变更在同一锁内检查 `X-Aichat-Db-Generation`，旧代际返回 `409 db-generation-changed`。未带头的旧客户端只兼容初始代际 `0`。
+  待同步操作入队时固定代际，不能重放时重新标记。启动先检查清空标记，仅清理明确已失效的队列及失败标记，保留并重放兄弟标签页的新代际操作，然后回填本地；本地事务成功后才采用新代际，不混入旧墓碑或运行时状态。已打开的旧标签页遇到清空须刷新。
+  回归：`node tools/db-resetcheck.mjs`。群聊发送的会话归属与草稿隔离回归：`node tools/group-send-switchcheck.mjs`。
 - `core/store.js` 的每个写操作（saveCharacter / deleteCharacter / appendMessage / updateMessage /
   deleteMessage(s) / clearMessages / saveMemory / setSettings / wipeAll，以及群聊的
   saveGroup / deleteGroup / appendGroupMessage / updateGroupMessage / deleteGroupMessage /
@@ -1573,7 +1579,7 @@ fetch 失败不再当成 502 报错，也不再往已关闭的响应上写。
 - 角色卡和群资料镜像携带 `base`（编辑前快照）及 `data`（编辑后快照）。`core/entity-sync.js` 三方合并实际改动字段；不相交的字段自动合并，同字段不同值返回 HTTP 409。服务端版本、更新时间与角色历史按实际提交结果维护，重复重放不重复增加版本。
 - 老队列不带 `base` 时仍兼容读取和创建；双方都有版本号时，旧版本整卡覆盖会被拒绝。无版本号的旧格式接口仅作兼容，不提供完整的多端冲突保护。
 - 冲突操作保留在持久队列，浏览器草稿和电脑文件均保留。侧栏底部的「资料有冲突」打开两端内容对照；用户可保留电脑版本，或只将本次修改的字段合并到最新电脑版本。队首修改与其他窗口同步共用锁，处理完继续重放并重新载入。
-- 设置中的「立即同步」走待同步队列与回填流程，避免用旧浏览器快照整体覆盖另一端更新。`syncNow()` 保留为明确的整库替换接口，供兼容、迁移和测试使用。
+- 设置中的「立即同步」调用 `syncNow()`，核对库代际后重放待同步队列，不用旧浏览器快照整体覆盖另一端。启动回填由 `syncOnBoot()` 负责，初始代际的旧浏览器迁移仍可通过 `/replace` 完成。
 - `replaceLocalSnapshot()` 在 `characters/messages/memory/groups/groupMessages` 五表事务中一次提交；不清理用量、音频缓存或运行时状态，也不会为回填记忆额外发起镜像写入。
 - 侧栏通过既有的拥有者索引和复合时间索引读取每个会话的末条消息与数量，不读取全部正文。`listConversationStats()` 合并提供私聊和群聊摘要；旧查询接口保留。
 - 聊天界面初次读取最近 100 条，点击「加载更早的消息」每次扩展 100 条。搜索、收藏与引用跳转可扩展到目标消息；同时间戳按 IndexedDB 的字符串主键顺序排列。过期的异步分页结果不得覆盖新会话。
