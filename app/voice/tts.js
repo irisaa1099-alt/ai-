@@ -15,6 +15,7 @@
  *   6. 全部 API 在受限环境（无声、无 AudioContext、无 IndexedDB）下都不抛错，只静默降级。
  */
 import { getProvider } from '../data/models.js';
+import { toGraphemes } from '../core/util.js';
 
 /* =====================================================================
    0. 常量与极小工具
@@ -574,15 +575,30 @@ function watchdogMs(len, rate) {
  * @param {AbortSignal} [signal] 打断信号
  * @returns {Promise<void>} 播放结束（或被打断/超时）后 resolve，永不 reject
  */
-function speakWebSpeech(text, cfg, signal) {
+async function speakWebSpeech(text, cfg, signal) {
+  if (!canSpeak) return;
+  let chunk = '';
+  for (const part of toGraphemes(String(text || ''))) {
+    if (signal && signal.aborted) return;
+    if (chunk && chunk.length + part.length > MAX_UTTERANCE_CHARS) {
+      await speakWebSpeechChunk(chunk, cfg, signal);
+      chunk = '';
+    }
+    chunk += part;
+  }
+  if (chunk && !(signal && signal.aborted)) await speakWebSpeechChunk(chunk, cfg, signal);
+}
+
+/** 按顺序播放短段；每段保留独立的超时与取消处理。 */
+function speakWebSpeechChunk(text, cfg, signal) {
   return new Promise((resolve) => {
     if (!canSpeak) { resolve(); return; }
-    const body = String(text || '').slice(0, MAX_UTTERANCE_CHARS);
+    const body = String(text || '');
     if (!body.trim()) { resolve(); return; }
 
     // 注意：钩子在 Promise 执行器开头取快照，避免 TDZ / 被后续调用改写
-    const onStarted = hookStart;
-    const onFailed = hookError;
+    const onStarted = typeof cfg.onStart === 'function' ? cfg.onStart : null;
+    const onFailed = typeof cfg.onError === 'function' ? cfg.onError : null;
     let done = false;
     let timer = null;
     let u = null;

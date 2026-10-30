@@ -346,7 +346,7 @@ let speakingMsgId = '';
 /** 语音状态：{ queue, splitter, cfg, speakerId } */
 let speech = { queue: null, splitter: null, cfg: null, speakerId: '' };
 /** 语音输入状态 */
-const sttState = { rec: null, base: '', final: '', active: false };
+const sttState = { rec: null, session: null, base: '', final: '', active: false };
 let wired = false;
 let clockTimer = null;
 
@@ -1841,9 +1841,9 @@ function speechPlan(speaker, g) {
   return { cfg, mode: cfg.autoplay };
 }
 
-function startSpeechFor(speaker, g) {
+function startSpeechFor(character, g) {
   stopSpeechAll();
-  const plan = speechPlan(speaker, g);
+  const plan = speechPlan(character, g);
   if (!plan) return;
   let queue = null;
   queue = new SpeechQueue(
@@ -1865,7 +1865,7 @@ function startSpeechFor(speaker, g) {
   );
   // shortLimit 从设置里取（与单聊一致），原来这里硬编码 60，用户改了设置对群聊无效
   const shortLimit = num(curSettings().voice && curSettings().voice.shortLimit, 60);
-  speech = { queue, splitter: createSplitter(), cfg: plan.cfg, mode: plan.mode, chars: 0, speakerId: speaker.id, shortLimit };
+  speech = { queue, splitter: createSplitter(), cfg: plan.cfg, mode: plan.mode, chars: 0, speakerId: character.id, shortLimit };
 }
 
 function feedSpeech(delta, full) {
@@ -1964,35 +1964,48 @@ function toggleStt() {
     stopStt(false);
     return;
   }
+  const s = curSettings();
+  if (((s.voice || {}).stt || {}).enabled === false) {
+    toast('语音输入已关闭，请在设置中开启', 'info');
+    return;
+  }
   if (!sttAvailable()) {
     toast('当前浏览器不支持语音输入，换 Chrome / Edge 试试', 'warn', 4000);
     return;
   }
-  const s = curSettings();
   const lang = ((s.voice || {}).stt || {}).lang || 'zh-CN';
+  const sourceInput = inputEl;
+  const groupId = group && group.id;
+  const session = {};
+  sttState.session = session;
+  const ownsInput = () => sttState.session === session && inputEl === sourceInput
+    && sourceInput && sourceInput.isConnected && group && group.id === groupId
+    && ((curSettings().voice || {}).stt || {}).enabled !== false;
   sttState.base = inputEl && inputEl.value ? String(inputEl.value).replace(/\s+$/, '') : '';
   sttState.final = '';
   try {
-    sttState.rec = createRecognizer({
+    const rec = createRecognizer({
       lang,
       interim: true,
-      onResult: onSttResult,
-      onEnd: () => stopStt(true),
+      onResult: (text, isFinal) => { if (ownsInput()) onSttResult(text, isFinal); },
+      onEnd: () => { if (sttState.rec === rec) stopStt(true); },
       // 静默 8 秒自动收工（stt.js 的看门狗）
       onSilence: () => {
+        if (sttState.rec !== rec) return;
         toast('好一会儿没听到你说话，已停止录音', 'warn', 3000);
         stopStt(true);
       },
       onError: (err) => {
+        if (sttState.rec !== rec) return;
         toast(`语音识别出错：${(err && err.message) || err || '未知错误'}`, 'error');
         stopStt(true);
       },
     });
-    sttState.rec.start();
-    setSttUi(true);
+    sttState.rec = rec;
+    rec.start();
+    setSttUi(sttState.rec === rec && rec.listening);
   } catch (err) {
-    sttState.rec = null;
-    setSttUi(false);
+    stopStt(true);
     toast(`无法启动语音识别：${(err && err.message) || err}`, 'error');
   }
 }
@@ -2039,6 +2052,7 @@ function joinSpeech(a, b) {
 function stopStt(silent) {
   const rec = sttState.rec;
   sttState.rec = null;
+  if (silent) sttState.session = null;
   if (rec) {
     try {
       rec.stop();
@@ -2461,6 +2475,7 @@ export function renderGroupPanel(root, ctx) {
 function wireBus() {
   if (wired) return;
   wired = true;
+  bus.on('voice:stop-input', () => stopStt(true));
 
   const scheduleRefresh = debounce(() => {
     void refreshGroupMessages();
@@ -2582,6 +2597,7 @@ function wireBus() {
 
   // 设置 → 我的资料 改了昵称/头像：群聊里"我"的发言要立刻换头像/名字
   bus.on('settings:changed', (next) => {
+    if (((next && next.voice || {}).stt || {}).enabled === false) stopStt(true);
     if (!listEl || busy) return;
     const up = (next && next.user) || {};
     const changed = !userProfileCache || userProfileCache.name !== up.name || userProfileCache.avatar !== up.avatar;

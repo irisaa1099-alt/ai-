@@ -471,6 +471,8 @@ function renderChatPlaceholder(reason) {
 /** 渲染中栏（角色私聊 / 群聊二选一） */
 function renderChatInto() {
   if (!chatPane) return;
+  // 私聊与群聊使用不同模块，切换前统一结束上一视图的麦克风会话。
+  bus.emit('voice:stop-input');
 
   // ---- 群聊 ----
   if (currentGroupId) {

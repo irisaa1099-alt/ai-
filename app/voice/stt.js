@@ -249,6 +249,7 @@ export function createRecognizer(opts = {}) {
     finalText = '';
     try {
       rec.start();
+      if (stopped) return; // 启动期间的同步错误回调可能已取消识别。
       listening = true;
       startSilenceWatch();
     } catch (e) {
@@ -256,9 +257,15 @@ export function createRecognizer(opts = {}) {
       const msg = String((e && e.message) || e || '');
       if (msg.indexOf('already started') >= 0) {
         listening = true;
+        startSilenceWatch();
         return;
       }
+      stopped = true;
+      listening = false;
+      stopSilenceWatch();
+      if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
       emit(onError, e || new Error('语音识别启动失败'));
+      notifyEnd();
     }
   }
 

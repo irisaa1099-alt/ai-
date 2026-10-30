@@ -196,7 +196,7 @@ let backWatcher = null;
 /** @type {MediaQueryList|null} */
 let mediaWatcher = null;
 /** 语音输入状态 */
-const sttState = { rec: null, base: '', final: '', active: false };
+const sttState = { rec: null, session: null, base: '', final: '', active: false };
 /** 是否已挂载 bus 订阅 */
 let wired = false;
 /** 防止开场白并发写入 */
@@ -2389,35 +2389,48 @@ function toggleStt() {
     stopStt(false);
     return;
   }
+  const s = curSettings();
+  if (((s.voice || {}).stt || {}).enabled === false) {
+    toast('语音输入已关闭，请在设置中开启', 'info');
+    return;
+  }
   if (!sttAvailable()) {
     toast('当前浏览器不支持语音输入，换 Chrome / Edge 试试', 'warn', 4000);
     return;
   }
-  const s = curSettings();
   const lang = ((s.voice || {}).stt || {}).lang || 'zh-CN';
+  const sourceInput = inputEl;
+  const charId = curId();
+  const session = {};
+  sttState.session = session;
+  const ownsInput = () => sttState.session === session && inputEl === sourceInput
+    && sourceInput && sourceInput.isConnected && curId() === charId
+    && ((curSettings().voice || {}).stt || {}).enabled !== false;
   sttState.base = inputEl && inputEl.value ? String(inputEl.value).replace(/\s+$/, '') : '';
   sttState.final = '';
   try {
-    sttState.rec = createRecognizer({
+    const rec = createRecognizer({
       lang,
       interim: true,
-      onResult: onSttResult,
-      onEnd: () => stopStt(true),
+      onResult: (text, isFinal) => { if (ownsInput()) onSttResult(text, isFinal); },
+      onEnd: () => { if (sttState.rec === rec) stopStt(true); },
       // 静默 8 秒自动收工（stt.js 的看门狗），给用户一个明确交代，别让"正在听…"一直挂着
       onSilence: () => {
+        if (sttState.rec !== rec) return;
         toast('好一会儿没听到你说话，已停止录音', 'warn', 3000);
         stopStt(true);
       },
       onError: (err) => {
+        if (sttState.rec !== rec) return;
         toast(`语音识别出错：${(err && err.message) || err || '未知错误'}`, 'error');
         stopStt(true);
       },
     });
-    sttState.rec.start();
-    setSttUi(true);
+    sttState.rec = rec;
+    rec.start();
+    setSttUi(sttState.rec === rec && rec.listening);
   } catch (err) {
-    sttState.rec = null;
-    setSttUi(false);
+    stopStt(true);
     toast(`无法启动语音识别：${(err && err.message) || err}`, 'error');
   }
 }
@@ -2480,6 +2493,8 @@ function joinSpeech(a, b) {
 function stopStt(silent) {
   const rec = sttState.rec;
   sttState.rec = null;
+  // 主动结束时仍接收同一输入框的最后一段；取消、切换或新录音使旧回调失效。
+  if (silent) sttState.session = null;
   if (rec) {
     try {
       rec.stop();
@@ -2692,6 +2707,7 @@ async function removeChar() {
 function wireBus() {
   if (wired) return;
   wired = true;
+  bus.on('voice:stop-input', () => stopStt(true));
 
   bus.on('msg:appended', (m) => {
     if (!rootEl || !listEl) return;
@@ -2715,6 +2731,7 @@ function wireBus() {
   });
 
   bus.on('settings:changed', (next) => {
+    if (((next && next.voice || {}).stt || {}).enabled === false) stopStt(true);
     if (!rootEl || !(rootEl.isConnected || rootEl.parentNode)) return;
     renderHead(curChar());
     updateHint();
